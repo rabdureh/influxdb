@@ -65,6 +65,14 @@ func (self *LevelDbShard) Write(database string, series []*protocol.Series) erro
 			return errors.New("Unable to write no data. Series was nil or had no points.")
 		}
 
+	for fieldIndex, id := range series.FieldIds {
+		for _, point := range series.Points {
+			keyBuffer := bytes.NewBuffer(make([]byte, 0, 24))
+			keyBuffer.Write(id)
+			binary.Write(keyBuffer, binary.BigEndian, self.convertTimestampToUint(point.GetTimestampInMicroseconds()))
+			binary.Write(keyBuffer, binary.BigEndian, *point.SequenceNumber)
+			pointKey := keyBuffer.Bytes()
+
 		count := 0
 		for fieldIndex, field := range s.Fields {
 			temp := field

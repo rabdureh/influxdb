@@ -619,6 +619,7 @@ nextfield:
 }
 
 func (self *CoordinatorImpl) CommitSeriesData(db string, serieses []*protocol.Series, sync bool) error {
+	// replace all the field names, or error out if we can't assign the field ids.
 	err := self.replaceFieldNamesWithIds(serieses)
 	if err != nil {
 		return err
