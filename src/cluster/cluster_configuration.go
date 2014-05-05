@@ -29,6 +29,7 @@ type QuerySpec interface {
 	Database() string
 	TableNames() []string
 	GetGroupByInterval() *time.Duration
+	AllShardsQuery() bool
 	IsRegex() bool
 	ShouldQueryShortTermAndLongTerm() (shouldQueryShortTerm bool, shouldQueryLongTerm bool)
 }
@@ -793,6 +794,10 @@ func (self *ClusterConfiguration) GetAllShards() []*ShardData {
 }
 
 func (self *ClusterConfiguration) getShardRange(querySpec QuerySpec, shards []*ShardData) []*ShardData {
+	if querySpec.AllShardsQuery() {
+		return shards
+	}
+
 	startTime := common.TimeToMicroseconds(querySpec.GetStartTime())
 	endTime := common.TimeToMicroseconds(querySpec.GetEndTime())
 
