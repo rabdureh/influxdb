@@ -471,6 +471,7 @@ func (self *ClusterConfiguration) SaveClusterAdmin(u *ClusterAdmin) {
 		return
 	}
 	self.clusterAdmins[u.GetName()] = u
+	u.ChangePassword(u.Hash)
 }
 
 type SavedConfiguration struct {
