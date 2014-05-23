@@ -641,6 +641,17 @@ func (self *LevelDbShard) createIdForDbSeriesColumnDEPRECATED(db, series, column
 		return
 	}
 
+	self.columnIdMutex.Lock()
+	defer self.columnIdMutex.Unlock()
+	ret, err = self.getIdForDbSeriesColumn(db, series, column)
+	if err != nil {
+		return
+	}
+
+	if ret != nil {
+		return
+	}
+
 	ret, err = self.getNextIdForColumn(db, series, column)
 	if err != nil {
 		return
