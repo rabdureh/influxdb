@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	log "code.google.com/p/log4go"
 )
 
@@ -80,7 +79,6 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 
 	for _, query := range q {
 		querySpec := parser.NewQuerySpec(user, database, query)
-
 		if query.DeleteQuery != nil {
 			if err := self.clusterConfiguration.CreateCheckpoint(); err != nil {
 				return err
@@ -132,6 +130,8 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 		if err := self.checkPermission(user, querySpec); err != nil {
 			return err
 		}
+		fmt.Println("RUNNING SELECT QUERY!!")
+		fmt.Println(self.runQuery(querySpec, seriesWriter))
 		return self.runQuery(querySpec, seriesWriter)
 	}
 	seriesWriter.Close()
@@ -324,7 +324,6 @@ func (self *CoordinatorImpl) getShardsAndProcessor(querySpec *parser.QuerySpec, 
 			}
 		}
 	}()
-
 	return shards, processor, seriesClosed, nil
 }
 
@@ -445,7 +444,7 @@ func (self *CoordinatorImpl) runQuerySpec(querySpec *parser.QuerySpec, seriesWri
 	// make sure we read the rest of the errors and responses
 	for _err := range errors {
 		if err == nil {
-			err = _err
+				err = _err
 		}
 	}
 
