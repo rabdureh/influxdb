@@ -1,8 +1,10 @@
 package http
 
 import (
+	"bytes"
 	"cluster"
 	. "common"
+	"compress/gzip"
 	"coordinator"
 	"crypto/tls"
 	"encoding/base64"
@@ -55,7 +57,7 @@ func NewHttpServer(httpPort string, readTimeout time.Duration, adminAssetsDir st
 }
 
 const (
-	INVALID_CREDENTIALS_MSG = "Invalid database/username/password"
+	INVALID_CREDENTIALS_MSG  = "Invalid database/username/password"
 	JSON_PRETTY_PRINT_INDENT = "    "
 )
 
@@ -91,7 +93,7 @@ func (self *HttpServer) registerEndpoint(p *pat.PatternServeMux, method string, 
 	version := self.clusterConfig.GetLocalConfiguration().Version
 	switch method {
 	case "get":
-		p.Get(pattern, HeaderHandler(f, version))
+		p.Get(pattern, CompressionHeaderHandler(f, version))
 	case "post":
 		p.Post(pattern, HeaderHandler(f, version))
 	case "del":
@@ -362,12 +364,26 @@ func (self *HttpServer) writePoints(w libhttp.ResponseWriter, r *libhttp.Request
 	}
 
 	self.tryAsDbUserAndClusterAdmin(w, r, func(user User) (int, interface{}) {
-		series, err := ioutil.ReadAll(r.Body)
+		reader := r.Body
+		encoding := r.Header.Get("Content-Encoding")
+		switch encoding {
+		case "gzip":
+			reader, err = gzip.NewReader(r.Body)
+			if err != nil {
+				return libhttp.StatusInternalServerError, err.Error()
+			}
+		default:
+			// assume it's plain text
+		}
+
+		series, err := ioutil.ReadAll(reader)
 		if err != nil {
 			return libhttp.StatusInternalServerError, err.Error()
 		}
+		decoder := json.NewDecoder(bytes.NewBuffer(series))
+		decoder.UseNumber()
 		serializedSeries := []*SerializedSeries{}
-		err = json.Unmarshal(series, &serializedSeries)
+		err = decoder.Decode(&serializedSeries)
 		if err != nil {
 			return libhttp.StatusBadRequest, err.Error()
 		}
@@ -602,8 +618,10 @@ type ApiUser struct {
 }
 
 type UserDetail struct {
-	Name    string `json:"name"`
-	IsAdmin bool   `json:"isAdmin"`
+	Name     string `json:"name"`
+	IsAdmin  bool   `json:"isAdmin"`
+	WriteTo  string `json:"writeTo"`
+	ReadFrom string `json:"readFrom"`
 }
 
 type ContinuousQuery struct {
@@ -772,7 +790,7 @@ func (self *HttpServer) listDbUsers(w libhttp.ResponseWriter, r *libhttp.Request
 
 		users := make([]*UserDetail, 0, len(dbUsers))
 		for _, dbUser := range dbUsers {
-			users = append(users, &UserDetail{dbUser.GetName(), dbUser.IsDbAdmin(db)})
+			users = append(users, &UserDetail{dbUser.GetName(), dbUser.IsDbAdmin(db), dbUser.GetWritePermission(), dbUser.GetReadPermission()})
 		}
 		return libhttp.StatusOK, users
 	})
@@ -788,7 +806,7 @@ func (self *HttpServer) showDbUser(w libhttp.ResponseWriter, r *libhttp.Request)
 			return errorToStatusCode(err), err.Error()
 		}
 
-		userDetail := &UserDetail{user.GetName(), user.IsDbAdmin(db)}
+		userDetail := &UserDetail{user.GetName(), user.IsDbAdmin(db), user.GetWritePermission(), user.GetReadPermission()}
 
 		return libhttp.StatusOK, userDetail
 	})
