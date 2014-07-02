@@ -105,7 +105,6 @@ func (self *HttpServer) Serve(listener net.Listener) {
 
 	self.conn = listener
 	p := pat.New()
-
 	// Run the given query and return an array of series or a chunked response
 	// with each batch of points we get back
 	self.registerEndpoint(p, "get", "/db/:db/series", self.query)
@@ -309,10 +308,10 @@ func (self *HttpServer) sendCrossOriginHeader(w libhttp.ResponseWriter, r *libht
 }
 
 func (self *HttpServer) query(w libhttp.ResponseWriter, r *libhttp.Request) {
+	fmt.Println("QUERYING NOW!!")
 	query := r.URL.Query().Get("q")
 	db := r.URL.Query().Get(":db")
 	pretty := isPretty(r)
-
 	self.tryAsDbUserAndClusterAdmin(w, r, func(user User) (int, interface{}) {
 
 		precision, err := TimePrecisionFromString(r.URL.Query().Get("time_precision"))

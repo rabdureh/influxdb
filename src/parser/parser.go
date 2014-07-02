@@ -307,6 +307,7 @@ func setupSlice(hdr *reflect.SliceHeader, ptr unsafe.Pointer, size C.size_t) {
 }
 
 func GetGroupByClause(groupByClause *C.groupby_clause) (*GroupByClause, error) {
+	fmt.Println("ENTERED GETGROUPBYCLAUSE!!!")
 	if groupByClause == nil {
 		return &GroupByClause{Elems: nil}, nil
 	}
@@ -321,6 +322,8 @@ func GetGroupByClause(groupByClause *C.groupby_clause) (*GroupByClause, error) {
 
 	if groupByClause.fill_function != nil {
 		fun, err := GetValue(groupByClause.fill_function)
+		fmt.Print("GROUP BY CLAUSE: ")
+		fmt.Println(groupByClause.fill_function)
 		if err != nil {
 			return nil, err
 		}
@@ -457,8 +460,11 @@ func GetWhereCondition(condition *C.condition) (*WhereCondition, error) {
 	if condition.is_bool_expression != 0 {
 		expr, err := GetValue((*C.value)(condition.left))
 		if err != nil {
+			fmt.Println("PROB GETTING VALUE!!!")
 			return nil, err
 		}
+		fmt.Print("Expr: ")
+		fmt.Println(expr)
 		return &WhereCondition{
 			isBooleanExpression: true,
 			Left:                expr,
@@ -471,11 +477,13 @@ func GetWhereCondition(condition *C.condition) (*WhereCondition, error) {
 	var err error
 	c.Left, err = GetWhereCondition((*C.condition)(condition.left))
 	if err != nil {
+		fmt.Println("THERE WAS AN ERROR!!!")
 		return nil, err
 	}
 	c.Operation = C.GoString(condition.op)
 	c.Right, err = GetWhereCondition((*C.condition)(unsafe.Pointer(condition.right)))
-
+	fmt.Println("WHERE CONDITION EQUALS: ")
+	fmt.Println(c)
 	return c, err
 }
 
@@ -549,6 +557,7 @@ func ParseSelectQuery(query string) (*SelectQuery, error) {
 }
 
 func ParseQuery(query string) ([]*Query, error) {
+	//fmt.Println("REACHED HERE")
 	queryString := C.CString(query)
 	defer C.free(unsafe.Pointer(queryString))
 	q := C.parse_query(queryString)
@@ -641,7 +650,6 @@ func parseSelectDeleteCommonQuery(fromClause *C.from_clause, whereCondition *C.c
 			return goQuery, err
 		}
 	}
-
 	var startTime, endTime *time.Time
 	goQuery.Condition, endTime, err = getTime(goQuery.GetWhereCondition(), false)
 	if err != nil {
@@ -660,7 +668,6 @@ func parseSelectDeleteCommonQuery(fromClause *C.from_clause, whereCondition *C.c
 	if startTime != nil {
 		goQuery.startTime = *startTime
 	}
-
 	return goQuery, nil
 }
 

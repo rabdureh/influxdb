@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	log "code.google.com/p/log4go"
 )
 
@@ -80,7 +79,6 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 
 	for _, query := range q {
 		querySpec := parser.NewQuerySpec(user, database, query)
-
 		if query.DeleteQuery != nil {
 			if err := self.clusterConfiguration.CreateCheckpoint(); err != nil {
 				return err
@@ -132,6 +130,8 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 		if err := self.checkPermission(user, querySpec); err != nil {
 			return err
 		}
+		fmt.Println("RUNNING SELECT QUERY!!")
+		fmt.Println(self.runQuery(querySpec, seriesWriter))
 		return self.runQuery(querySpec, seriesWriter)
 	}
 	seriesWriter.Close()
@@ -174,7 +174,7 @@ func (self *CoordinatorImpl) runListSeriesQuery(querySpec *parser.QuerySpec, ser
 
 	var err error
 	for _, shard := range shards {
-		responseChan := make(chan *protocol.Response, shard.QueryResponseBufferSize(querySpec, self.config.LevelDbPointBatchSize))
+		responseChan := make(chan *protocol.Response, shard.QueryResponseBufferSize(querySpec, self.config.StoragePointBatchSize))
 		go shard.Query(querySpec, responseChan)
 		for {
 			response := <-responseChan
@@ -263,7 +263,7 @@ func (self *CoordinatorImpl) shouldQuerySequentially(shards []*cluster.ShardData
 	}
 
 	for _, shard := range shards {
-		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.LevelDbPointBatchSize)
+		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.StoragePointBatchSize)
 		// if the number of repsonses is too big, do a sequential querying
 		if bufferSize > self.config.ClusterMaxResponseBufferSize {
 			return true
@@ -324,7 +324,6 @@ func (self *CoordinatorImpl) getShardsAndProcessor(querySpec *parser.QuerySpec, 
 			}
 		}
 	}()
-
 	return shards, processor, seriesClosed, nil
 }
 
@@ -396,7 +395,7 @@ func (self *CoordinatorImpl) queryShards(querySpec *parser.QuerySpec, shards []*
 			return err
 		}
 		shard := shards[i]
-		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.LevelDbPointBatchSize)
+		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.StoragePointBatchSize)
 		if bufferSize > self.config.ClusterMaxResponseBufferSize {
 			bufferSize = self.config.ClusterMaxResponseBufferSize
 		}
@@ -445,7 +444,7 @@ func (self *CoordinatorImpl) runQuerySpec(querySpec *parser.QuerySpec, seriesWri
 	// make sure we read the rest of the errors and responses
 	for _err := range errors {
 		if err == nil {
-			err = _err
+				err = _err
 		}
 	}
 
