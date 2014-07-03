@@ -819,6 +819,8 @@ func (self *CoordinatorImpl) SubscribeTimeSeries(user common.User) error /*([]*S
         return common.NewAuthorizationError("Insufficient permissions to make a subscription")
     }
 
+    fmt.Println("subscribing to a database")
+
     //subscriptions := self.clusterConfiguration.GetSubscriptions()
     //return subscriptions, nil
     return nil
@@ -870,12 +872,12 @@ func (self *CoordinatorImpl) ListClusterAdmins(requester common.User) ([]string,
 	return self.clusterConfiguration.GetClusterAdmins(), nil
 }
 
-func (self *CoordinatorImpl) CreateSubscription(requester common.User, subscription *Subscription) error {
+func (self *CoordinatorImpl) CreateSubscription(requester common.User, subscription *cluster.Subscription) error {
     if !requester.IsClusterAdmin() {
         return common.NewAuthorizationError("Insufficient permissions")
     }
 
-    return self.raftServer.SaveSubscription()
+    return self.raftServer.SaveSubscription(subscription)
     return nil
 }
 

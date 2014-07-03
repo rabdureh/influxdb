@@ -1150,11 +1150,11 @@ type ClusterSubscriptions struct {
 func (self *HttpServer) listSubscriptions(w libhttp.ResponseWriter, r *libhttp.Request) {
     fmt.Println("hello from http listsubscriptions")
     self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
-        //subscriptionlist, err := self.subscriptionManager.ListSubscriptions(u)
-        err := self.subscriptionManager.ListSubscriptions(u)
+        subscriptionlist, err := self.subscriptionManager.ListSubscriptions(u)
         if err != nil {
             return errorToStatusCode(err), err.Error()
         }
+        /*
         subscriptionlist := []int{3}
         subscriptions := make([]*ClusterSubscriptions, 0, len(subscriptionlist))
         for sub1, sub2 := range subscriptions {
@@ -1163,6 +1163,7 @@ func (self *HttpServer) listSubscriptions(w libhttp.ResponseWriter, r *libhttp.R
             fmt.Printf("sub1 %+v: ", sub1)
             fmt.Printf("sub2 %#v: ", sub2)
         }
+        */
         return libhttp.StatusOK, subscriptions
     })
 }
@@ -1251,6 +1252,10 @@ func (self *HttpServer) subscribeTimeSeries(w libhttp.ResponseWriter, r *libhttp
         // Probably want to take an argument which is the person's ID
         serialMap.UniqueIds[serialMap.Counter] = r
         serialMap.Counter++
+        err := self.subscriptionManager.SubscribeTimeSeries(u)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
         return 0, nil
     })
 }

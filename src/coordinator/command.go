@@ -381,10 +381,10 @@ func (c *DropShardCommand) Apply(server raft.Server) (interface{}, error) {
 }
 
 type SaveSubscriptionCommand struct {
-    Subscription []*cluster.Subscription
+    Subscription    *cluster.Subscription
 }
 
-func NewSaveSubscriptionCommand(subscription []*cluster.Subscription) *SaveSubscriptionCommand {
+func NewSaveSubscriptionCommand(subscription *cluster.Subscription) *SaveSubscriptionCommand {
     return &SaveSubscriptionCommand{subscription}
 }
 
@@ -394,7 +394,7 @@ func (c *SaveSubscriptionCommand) CommandName() string {
 
 func (c *SaveSubscriptionCommand) Apply(server raft.Server) (interface{}, error) {
     config := server.Context().(*cluster.ClusterConfiguration)
-    ///createdSubscription, err := config.AddSubscription(c.Subscription)
+    createdSubscription, err := config.AddSubscription(c.Subscription)
     fmt.Println("we are here in command.go's Apply function")
     if err != nil {
         return nil, err
@@ -403,6 +403,7 @@ func (c *SaveSubscriptionCommand) Apply(server raft.Server) (interface{}, error)
     //for _, s := range createdSubscription {
     //createdSubscriptionData = append(createdSubscriptionData, s.ToNewSubscriptionData())
     //}
-    ///return createdSubscriptionData, nil
+    //return createdSubscriptionData, nil
+    return createdSubscription, nil
     return nil, nil
 }

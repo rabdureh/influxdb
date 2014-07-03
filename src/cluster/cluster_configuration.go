@@ -70,7 +70,7 @@ type ClusterConfiguration struct {
 	LocalServer                *ClusterServer
 	config                     *configuration.Configuration
     subscriptions              map[string]*Subscription
-    subscriptionsLock          sync.RWMutex
+    subscriptionLock           sync.RWMutex
 	addedLocalServerWait       chan bool
 	addedLocalServer           bool
 	connectionCreator          func(string) ServerConnection
@@ -502,8 +502,8 @@ func (self *ClusterConfiguration) GetClusterAdmins() (names []string) {
 
 func (self *ClusterConfiguration) GetSubscriptions() (subs []int) {
     // Do a little thing for locking subscriptions while this happens
-    self.subscriptionsLock.RLock()
-    defer self.subscriptionsLock.RUnlock()
+    self.subscriptionLock.RLock()
+    defer self.subscriptionLock.RUnlock()
 
     subscriptions := self.subscriptions
     // I don't get why first value from range is wanted.. isn't that the index
@@ -926,6 +926,17 @@ func HashDbAndSeriesToInt(database, series string) int {
 		nInt = nInt * -1
 	}
 	return nInt
+}
+
+func (self *ClusterConfiguration) AddSubscription(subscription *Subscription) (*Subscription, error) {
+    self.subscriptionLock.Lock()
+    defer self.subscriptionLock.Unlock()
+
+    if subscription == nil {
+        return nil, errors.New("AddSubscription called without a subscription")
+    }
+
+    return nil, errors.New("chuwepee")
 }
 
 // Add shards expects all shards to be of the same type (long term or short term) and have the same
