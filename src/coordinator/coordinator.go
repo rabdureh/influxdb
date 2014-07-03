@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	log "code.google.com/p/log4go"
 )
 
@@ -21,6 +20,7 @@ type CoordinatorImpl struct {
 	clusterConfiguration *cluster.ClusterConfiguration
 	raftServer           ClusterConsensus
 	config               *configuration.Configuration
+	permissions          Permissions
 }
 
 const (
@@ -60,6 +60,7 @@ func NewCoordinatorImpl(config *configuration.Configuration, raftServer ClusterC
 		config:               config,
 		clusterConfiguration: clusterConfiguration,
 		raftServer:           raftServer,
+		permissions:          Permissions{},
 	}
 
 	return coordinator
@@ -80,7 +81,6 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 
 	for _, query := range q {
 		querySpec := parser.NewQuerySpec(user, database, query)
-
 		if query.DeleteQuery != nil {
 			if err := self.clusterConfiguration.CreateCheckpoint(); err != nil {
 				return err
@@ -132,6 +132,8 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 		if err := self.checkPermission(user, querySpec); err != nil {
 			return err
 		}
+		fmt.Println("RUNNING SELECT QUERY!!")
+		fmt.Println(self.runQuery(querySpec, seriesWriter))
 		return self.runQuery(querySpec, seriesWriter)
 	}
 	seriesWriter.Close()
@@ -174,7 +176,7 @@ func (self *CoordinatorImpl) runListSeriesQuery(querySpec *parser.QuerySpec, ser
 
 	var err error
 	for _, shard := range shards {
-		responseChan := make(chan *protocol.Response, shard.QueryResponseBufferSize(querySpec, self.config.LevelDbPointBatchSize))
+		responseChan := make(chan *protocol.Response, shard.QueryResponseBufferSize(querySpec, self.config.StoragePointBatchSize))
 		go shard.Query(querySpec, responseChan)
 		for {
 			response := <-responseChan
@@ -200,8 +202,8 @@ func (self *CoordinatorImpl) runListSeriesQuery(querySpec *parser.QuerySpec, ser
 func (self *CoordinatorImpl) runDeleteQuery(querySpec *parser.QuerySpec, seriesWriter SeriesWriter) error {
 	user := querySpec.User()
 	db := querySpec.Database()
-	if !user.IsClusterAdmin() && !user.IsDbAdmin(db) {
-		return common.NewAuthorizationError("Insufficient permission to write to %s", db)
+	if ok, err := self.permissions.AuthorizeDeleteQuery(user, db); !ok {
+		return err
 	}
 	querySpec.RunAgainstAllServersInShard = true
 	return self.runQuerySpec(querySpec, seriesWriter)
@@ -211,8 +213,8 @@ func (self *CoordinatorImpl) runDropSeriesQuery(querySpec *parser.QuerySpec, ser
 	user := querySpec.User()
 	db := querySpec.Database()
 	series := querySpec.Query().DropSeriesQuery.GetTableName()
-	if !user.IsClusterAdmin() && !user.IsDbAdmin(db) && !user.HasWriteAccess(series) {
-		return common.NewAuthorizationError("Insufficient permissions to drop series")
+	if ok, err := self.permissions.AuthorizeDropSeries(user, db, series); !ok {
+		return err
 	}
 	querySpec.RunAgainstAllServersInShard = true
 	return self.runQuerySpec(querySpec, seriesWriter)
@@ -263,7 +265,7 @@ func (self *CoordinatorImpl) shouldQuerySequentially(shards []*cluster.ShardData
 	}
 
 	for _, shard := range shards {
-		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.LevelDbPointBatchSize)
+		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.StoragePointBatchSize)
 		// if the number of repsonses is too big, do a sequential querying
 		if bufferSize > self.config.ClusterMaxResponseBufferSize {
 			return true
@@ -324,7 +326,6 @@ func (self *CoordinatorImpl) getShardsAndProcessor(querySpec *parser.QuerySpec, 
 			}
 		}
 	}()
-
 	return shards, processor, seriesClosed, nil
 }
 
@@ -396,7 +397,7 @@ func (self *CoordinatorImpl) queryShards(querySpec *parser.QuerySpec, shards []*
 			return err
 		}
 		shard := shards[i]
-		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.LevelDbPointBatchSize)
+		bufferSize := shard.QueryResponseBufferSize(querySpec, self.config.StoragePointBatchSize)
 		if bufferSize > self.config.ClusterMaxResponseBufferSize {
 			bufferSize = self.config.ClusterMaxResponseBufferSize
 		}
@@ -445,7 +446,7 @@ func (self *CoordinatorImpl) runQuerySpec(querySpec *parser.QuerySpec, seriesWri
 	// make sure we read the rest of the errors and responses
 	for _err := range errors {
 		if err == nil {
-			err = _err
+				err = _err
 		}
 	}
 
@@ -727,8 +728,8 @@ func (self *CoordinatorImpl) write(db string, series []*protocol.Series, shard c
 }
 
 func (self *CoordinatorImpl) CreateContinuousQuery(user common.User, db string, query string) error {
-	if !user.IsClusterAdmin() && !user.IsDbAdmin(db) {
-		return common.NewAuthorizationError("Insufficient permissions to create continuous query")
+	if ok, err := self.permissions.AuthorizeCreateContinuousQuery(user, db); !ok {
+		return err
 	}
 
 	err := self.raftServer.CreateContinuousQuery(db, query)
@@ -739,8 +740,8 @@ func (self *CoordinatorImpl) CreateContinuousQuery(user common.User, db string, 
 }
 
 func (self *CoordinatorImpl) DeleteContinuousQuery(user common.User, db string, id uint32) error {
-	if !user.IsClusterAdmin() && !user.IsDbAdmin(db) {
-		return common.NewAuthorizationError("Insufficient permissions to delete continuous query")
+	if ok, err := self.permissions.AuthorizeDeleteContinuousQuery(user, db); !ok {
+		return err
 	}
 
 	err := self.raftServer.DeleteContinuousQuery(db, id)
@@ -751,8 +752,8 @@ func (self *CoordinatorImpl) DeleteContinuousQuery(user common.User, db string, 
 }
 
 func (self *CoordinatorImpl) ListContinuousQueries(user common.User, db string) ([]*protocol.Series, error) {
-	if !user.IsClusterAdmin() && !user.IsDbAdmin(db) {
-		return nil, common.NewAuthorizationError("Insufficient permissions to list continuous queries")
+	if ok, err := self.permissions.AuthorizeListContinuousQueries(user, db); !ok {
+		return nil, err
 	}
 
 	queries := self.clusterConfiguration.GetContinuousQueries(db)
@@ -763,13 +764,13 @@ func (self *CoordinatorImpl) ListContinuousQueries(user common.User, db string) 
 		queryString := query.Query
 		points = append(points, &protocol.Point{
 			Values: []*protocol.FieldValue{
-				&protocol.FieldValue{Int64Value: &queryId},
-				&protocol.FieldValue{StringValue: &queryString},
+				{Int64Value: &queryId},
+				{StringValue: &queryString},
 			},
 		})
 	}
 	seriesName := "continuous queries"
-	series := []*protocol.Series{&protocol.Series{
+	series := []*protocol.Series{{
 		Name:   &seriesName,
 		Fields: []string{"id", "query"},
 		Points: points,
@@ -778,8 +779,8 @@ func (self *CoordinatorImpl) ListContinuousQueries(user common.User, db string) 
 }
 
 func (self *CoordinatorImpl) CreateDatabase(user common.User, db string) error {
-	if !user.IsClusterAdmin() {
-		return common.NewAuthorizationError("Insufficient permissions to create database")
+	if ok, err := self.permissions.AuthorizeCreateDatabase(user); !ok {
+		return err
 	}
 
 	if !isValidName(db) {
@@ -794,8 +795,8 @@ func (self *CoordinatorImpl) CreateDatabase(user common.User, db string) error {
 }
 
 func (self *CoordinatorImpl) ListDatabases(user common.User) ([]*cluster.Database, error) {
-	if !user.IsClusterAdmin() {
-		return nil, common.NewAuthorizationError("Insufficient permissions to list databases")
+	if ok, err := self.permissions.AuthorizeListDatabases(user); !ok {
+		return nil, err
 	}
 
 	dbs := self.clusterConfiguration.GetDatabases()
@@ -827,8 +828,8 @@ func (self *CoordinatorImpl) SubscribeTimeSeries(user common.User) error /*([]*S
 }
 
 func (self *CoordinatorImpl) DropDatabase(user common.User, db string) error {
-	if !user.IsClusterAdmin() {
-		return common.NewAuthorizationError("Insufficient permissions to drop database")
+	if ok, err := self.permissions.AuthorizeDropDatabase(user); !ok {
+		return err
 	}
 
 	if err := self.clusterConfiguration.CreateCheckpoint(); err != nil {
@@ -865,8 +866,8 @@ func (self *CoordinatorImpl) AuthenticateClusterAdmin(username, password string)
 }
 
 func (self *CoordinatorImpl) ListClusterAdmins(requester common.User) ([]string, error) {
-	if !requester.IsClusterAdmin() {
-		return nil, common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeListClusterAdmins(requester); !ok {
+		return nil, err
 	}
 
 	return self.clusterConfiguration.GetClusterAdmins(), nil
@@ -882,8 +883,8 @@ func (self *CoordinatorImpl) CreateSubscription(requester common.User, subscript
 }
 
 func (self *CoordinatorImpl) CreateClusterAdminUser(requester common.User, username, password string) error {
-	if !requester.IsClusterAdmin() {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeCreateClusterAdmin(requester); !ok {
+		return err
 	}
 
 	if !isValidName(username) {
@@ -903,8 +904,8 @@ func (self *CoordinatorImpl) CreateClusterAdminUser(requester common.User, usern
 }
 
 func (self *CoordinatorImpl) DeleteClusterAdminUser(requester common.User, username string) error {
-	if !requester.IsClusterAdmin() {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeDeleteClusterAdmin(requester); !ok {
+		return err
 	}
 
 	user := self.clusterConfiguration.GetClusterAdmin(username)
@@ -917,8 +918,8 @@ func (self *CoordinatorImpl) DeleteClusterAdminUser(requester common.User, usern
 }
 
 func (self *CoordinatorImpl) ChangeClusterAdminPassword(requester common.User, username, password string) error {
-	if !requester.IsClusterAdmin() {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeChangeClusterAdminPassword(requester); !ok {
+		return err
 	}
 
 	user := self.clusterConfiguration.GetClusterAdmin(username)
@@ -945,8 +946,8 @@ func (self *CoordinatorImpl) Unsubscribe(requester common.User, ids []int) error
 */
 
 func (self *CoordinatorImpl) CreateDbUser(requester common.User, db, username, password string, permissions ...string) error {
-	if !requester.IsClusterAdmin() && !requester.IsDbAdmin(db) {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeCreateDbUser(requester, db); !ok {
+		return err
 	}
 
 	if username == "" {
@@ -969,8 +970,8 @@ func (self *CoordinatorImpl) CreateDbUser(requester common.User, db, username, p
 	if self.clusterConfiguration.GetDbUser(db, username) != nil {
 		return fmt.Errorf("User %s already exists", username)
 	}
-	readMatcher := []*cluster.Matcher{&cluster.Matcher{true, ".*"}}
-	writeMatcher := []*cluster.Matcher{&cluster.Matcher{true, ".*"}}
+	readMatcher := []*cluster.Matcher{{true, ".*"}}
+	writeMatcher := []*cluster.Matcher{{true, ".*"}}
 	switch len(permissions) {
 	case 0:
 	case 2:
@@ -986,8 +987,8 @@ func (self *CoordinatorImpl) CreateDbUser(requester common.User, db, username, p
 }
 
 func (self *CoordinatorImpl) DeleteDbUser(requester common.User, db, username string) error {
-	if !requester.IsClusterAdmin() && !requester.IsDbAdmin(db) {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeDeleteDbUser(requester, db); !ok {
+		return err
 	}
 
 	user := self.clusterConfiguration.GetDbUser(db, username)
@@ -999,16 +1000,16 @@ func (self *CoordinatorImpl) DeleteDbUser(requester common.User, db, username st
 }
 
 func (self *CoordinatorImpl) ListDbUsers(requester common.User, db string) ([]common.User, error) {
-	if !requester.IsClusterAdmin() && !requester.IsDbAdmin(db) {
-		return nil, common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeListDbUsers(requester, db); !ok {
+		return nil, err
 	}
 
 	return self.clusterConfiguration.GetDbUsers(db), nil
 }
 
 func (self *CoordinatorImpl) GetDbUser(requester common.User, db string, username string) (common.User, error) {
-	if !requester.IsClusterAdmin() && !requester.IsDbAdmin(db) {
-		return nil, common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeGetDbUser(requester, db); !ok {
+		return nil, err
 	}
 
 	dbUser := self.clusterConfiguration.GetDbUser(db, username)
@@ -1020,8 +1021,8 @@ func (self *CoordinatorImpl) GetDbUser(requester common.User, db string, usernam
 }
 
 func (self *CoordinatorImpl) ChangeDbUserPassword(requester common.User, db, username, password string) error {
-	if !requester.IsClusterAdmin() && !requester.IsDbAdmin(db) && !(requester.GetDb() == db && requester.GetName() == username) {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeChangeDbUserPassword(requester, db, username); !ok {
+		return err
 	}
 
 	hash, err := cluster.HashPassword(password)
@@ -1032,16 +1033,16 @@ func (self *CoordinatorImpl) ChangeDbUserPassword(requester common.User, db, use
 }
 
 func (self *CoordinatorImpl) ChangeDbUserPermissions(requester common.User, db, username, readPermissions, writePermissions string) error {
-	if !requester.IsClusterAdmin() && !requester.IsDbAdmin(db) {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeChangeDbUserPermissions(requester, db); !ok {
+		return err
 	}
 
 	return self.raftServer.ChangeDbUserPermissions(db, username, readPermissions, writePermissions)
 }
 
 func (self *CoordinatorImpl) SetDbAdmin(requester common.User, db, username string, isAdmin bool) error {
-	if !requester.IsClusterAdmin() && !requester.IsDbAdmin(db) {
-		return common.NewAuthorizationError("Insufficient permissions")
+	if ok, err := self.permissions.AuthorizeGrantDbUserAdmin(requester, db); !ok {
+		return err
 	}
 
 	user := self.clusterConfiguration.GetDbUser(db, username)

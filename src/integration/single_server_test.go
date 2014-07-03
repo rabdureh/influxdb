@@ -93,7 +93,7 @@ func (self *SingleServerSuite) TestInvalidPercentile(c *C) {
 		Name:    "test_invalid_percentile",
 		Columns: []string{"foo", "bar"},
 		Points: [][]interface{}{
-			[]interface{}{1.0, 2.0},
+			{1.0, 2.0},
 		},
 	}
 	c.Assert(client.WriteSeries([]*influxdb.Series{series}), IsNil)
@@ -108,7 +108,7 @@ func (self *SingleServerSuite) TestInvalidSeriesName(c *C) {
 		Name:    "",
 		Columns: []string{"foo", "bar"},
 		Points: [][]interface{}{
-			[]interface{}{1.0, 2.0},
+			{1.0, 2.0},
 		},
 	}
 	c.Assert(client.WriteSeries([]*influxdb.Series{series}), ErrorMatches, ".*\\(400\\).*empty.*")
@@ -121,7 +121,7 @@ func (self *SingleServerSuite) TestInvalidDataWrite(c *C) {
 		Name:    "test_invalid_data",
 		Columns: []string{"foo", "bar"},
 		Points: [][]interface{}{
-			[]interface{}{1.0},
+			{1.0},
 		},
 	}
 	c.Assert(client.WriteSeries([]*influxdb.Series{series}), ErrorMatches, ".*\\(400\\).*invalid.*")
@@ -211,10 +211,24 @@ func (self *SingleServerSuite) TestSingleServerHostnameChange(c *C) {
 func (self *SingleServerSuite) TestUserWritePermissions(c *C) {
 	rootUser := self.server.GetClient("", c)
 
+	verifyPermissions := func(db string, name string, readFrom string, writeTo string) {
+		users, _ := rootUser.GetDatabaseUserList(db)
+		matched := false
+		for _, user := range users {
+			if user["name"] == name {
+				c.Assert(user["readFrom"], DeepEquals, readFrom)
+				c.Assert(user["writeTo"], DeepEquals, writeTo)
+				matched = true
+			}
+		}
+		c.Assert(matched, Equals, true)
+	}
+
 	// create two users one that can only read and one that can only write. both can access test_should_read
 	// series only
 	/* c.Assert(rootUser.CreateDatabase("db1"), IsNil) */
 	c.Assert(rootUser.CreateDatabaseUser("db1", "limited_user", "pass", "^$", "^$"), IsNil)
+	verifyPermissions("db1", "limited_user", "^$", "^$")
 
 	config := &influxdb.ClientConfig{
 		Username: "limited_user",
@@ -251,6 +265,7 @@ func (self *SingleServerSuite) TestUserWritePermissions(c *C) {
 	content := self.server.RunQueryAsRoot("select * from test_should_write", "m", c)
 	c.Assert(content, HasLen, 0)
 	rootUser.ChangeDatabaseUser("db1", "limited_user", "pass", false, "^$", "test_should_write")
+	verifyPermissions("db1", "limited_user", "^$", "test_should_write")
 	// write the data to test the write permissions
 	c.Assert(user.WriteSeries(series), IsNil)
 	self.server.WaitForServerToSync()
@@ -263,6 +278,7 @@ func (self *SingleServerSuite) TestUserWritePermissions(c *C) {
 	content = self.server.RunQueryAsRoot("select * from test_should_not_write", "m", c)
 	c.Assert(content, HasLen, 0)
 	rootUser.ChangeDatabaseUser("db1", "limited_user", "pass", false, "^$", "test_.*")
+	verifyPermissions("db1", "limited_user", "^$", "test_.*")
 	c.Assert(user.WriteSeries(invalidSeries), IsNil)
 	self.server.WaitForServerToSync()
 	content = self.server.RunQueryAsRoot("select * from test_should_not_write", "m", c)
@@ -503,7 +519,6 @@ func (self *SingleServerSuite) verifyWrite(series string, value, sequence interf
 	p := ToMap(data[0])
 	c.Assert(p[0]["a"], Equals, value)
 	return p[0]["sequence_number"]
-	return nil
 }
 
 func (self *SingleServerSuite) TestInvalidTimestamp(c *C) {
