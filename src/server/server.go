@@ -60,7 +60,7 @@ func NewServer(config *configuration.Configuration) (*Server, error) {
 	protobufServer := coordinator.NewProtobufServer(config.ProtobufListenString(), requestHandler)
 
 	raftServer.AssignCoordinator(coord)
-	httpApi := http.NewHttpServer(config.ApiHttpPortString(), config.ApiReadTimeout, config.AdminAssetsDir, coord, coord, clusterConfig, raftServer)
+	httpApi := http.NewHttpServer(config.ApiHttpPortString(), config.ApiReadTimeout, config.AdminAssetsDir, coord, coord, coord, clusterConfig, raftServer)
 	httpApi.EnableSsl(config.ApiHttpSslPortString(), config.ApiHttpCertPath)
 	graphiteApi := graphite.NewServer(config, coord, clusterConfig)
 	adminServer := admin.NewHttpServer(config.AdminAssetsDir, config.AdminHttpPortString())
@@ -144,9 +144,11 @@ func (self *Server) ListenAndServe() error {
 		port := udpInput.Port
 		database := udpInput.Database
 
-		if port <= 0 || database == "" {
-			log.Warn("Cannot start udp server. please check your configuration")
+		if port <= 0 {
+			log.Warn("Cannot start udp server on port %d. please check your configuration", port)
 			continue
+		} else if database == "" {
+			log.Warn("Cannot start udp server for database=\"\".  please check your configuration")
 		}
 
 		log.Info("Starting UDP Listener on port %d to database %s", port, database)
@@ -200,7 +202,7 @@ func (self *Server) reportStats() {
 			Name:    "reports",
 			Columns: []string{"os", "arch", "id", "version"},
 			Points: [][]interface{}{
-				[]interface{}{runtime.GOOS, runtime.GOARCH, self.RaftServer.GetRaftName(), self.Config.InfluxDBVersion},
+				{runtime.GOOS, runtime.GOARCH, self.RaftServer.GetRaftName(), self.Config.InfluxDBVersion},
 			},
 		}
 

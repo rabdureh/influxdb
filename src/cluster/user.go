@@ -88,12 +88,24 @@ func (self *ClusterAdmin) IsClusterAdmin() bool {
 	return true
 }
 
+func (self *ClusterAdmin) IsDbAdmin(_ string) bool {
+	return true
+}
+
 func (self *ClusterAdmin) HasWriteAccess(_ string) bool {
 	return true
 }
 
+func (self *ClusterAdmin) GetWritePermission() string {
+	return ".*"
+}
+
 func (self *ClusterAdmin) HasReadAccess(_ string) bool {
 	return true
+}
+
+func (self *ClusterAdmin) GetReadPermission() string {
+	return ".*"
 }
 
 type DbUser struct {
@@ -118,6 +130,14 @@ func (self *DbUser) HasWriteAccess(name string) bool {
 	return false
 }
 
+func (self *DbUser) GetWritePermission() string {
+	if len(self.WriteTo) > 0 {
+		matcher := self.WriteTo[0]
+		return matcher.Name
+	}
+	return ""
+}
+
 func (self *DbUser) HasReadAccess(name string) bool {
 	for _, matcher := range self.ReadFrom {
 		if matcher.Matches(name) {
@@ -128,13 +148,21 @@ func (self *DbUser) HasReadAccess(name string) bool {
 	return false
 }
 
+func (self *DbUser) GetReadPermission() string {
+	if len(self.ReadFrom) > 0 {
+		matcher := self.ReadFrom[0]
+		return matcher.Name
+	}
+	return ""
+}
+
 func (self *DbUser) GetDb() string {
 	return self.Db
 }
 
 func (self *DbUser) ChangePermissions(readPermissions, writePermissions string) {
-	self.ReadFrom = []*Matcher{&Matcher{true, readPermissions}}
-	self.WriteTo = []*Matcher{&Matcher{true, writePermissions}}
+	self.ReadFrom = []*Matcher{{true, readPermissions}}
+	self.WriteTo = []*Matcher{{true, writePermissions}}
 }
 
 func HashPassword(password string) ([]byte, error) {

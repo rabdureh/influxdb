@@ -11,6 +11,11 @@ import (
 	. "influxdb-go"
 	"regexp"
 	//"reflect"
+	"strconv"
+	//"encoding/json"
+	. "influxdb-go"
+	//"regexp"
+	"reflect"
 )
 
 const (
@@ -70,7 +75,6 @@ type RGMCommand struct {
 }
 
 func QueryHandler(rgmQuery string) (string) {
-	
 	tokenizedQuery := strings.Fields(rgmQuery)	
 	tokenizedQuery[0] = strings.Replace(tokenizedQuery[0], "\"", "", -1)
 	client, err := NewClient(&ClientConfig{})
@@ -138,7 +142,6 @@ func QueryHandler(rgmQuery string) (string) {
 				fmt.Println()
 			}
 		}		
-		// fmt.Println(results)
 		return rgmQ
 	case tsQuery, tsQ:
 		rgmQ := ""

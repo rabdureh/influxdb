@@ -42,6 +42,9 @@ type ClusterConsensus interface {
 	// When a cluster is turned on for the first time.
 	CreateRootUser() error
 	ForceLogCompaction() error
+
+    // Should this be here? Maybe not
+    SaveSubscription(*cluster.Subscription) error
 }
 
 type RequestHandler interface {

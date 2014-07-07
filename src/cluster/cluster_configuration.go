@@ -69,6 +69,8 @@ type ClusterConfiguration struct {
 	continuousQueryTimestamp   time.Time
 	LocalServer                *ClusterServer
 	config                     *configuration.Configuration
+    subscriptions              map[string]*Subscription
+    subscriptionLock           sync.RWMutex
 	addedLocalServerWait       chan bool
 	addedLocalServer           bool
 	connectionCreator          func(string) ServerConnection
@@ -85,6 +87,15 @@ type ClusterConfiguration struct {
 	shardsByIdLock             sync.RWMutex
 	LocalRaftName              string
 	writeBuffers               []*WriteBuffer
+}
+
+type Subscription struct {
+    Ids     []int
+    Start   string
+    End     string
+    StartTm string
+    EndTm   string
+    QTime   time.Time
 }
 
 type ContinuousQuery struct {
@@ -107,6 +118,7 @@ func NewClusterConfiguration(
 		dbUsers:                    make(map[string]map[string]*DbUser),
 		continuousQueries:          make(map[string][]*ContinuousQuery),
 		ParsedContinuousQueries:    make(map[string]map[uint32]*parser.SelectQuery),
+        subscriptions:              make(map[string]*Subscription),
 		servers:                    make([]*ClusterServer, 0),
 		config:                     config,
 		addedLocalServerWait:       make(chan bool, 1),
@@ -285,7 +297,7 @@ func (self *ClusterConfiguration) GetDatabases() []*Database {
 	defer self.createDatabaseLock.RUnlock()
 
 	dbs := make([]*Database, 0, len(self.DatabaseReplicationFactors))
-	for name, _ := range self.DatabaseReplicationFactors {
+	for name := range self.DatabaseReplicationFactors {
 		dbs = append(dbs, &Database{Name: name})
 	}
 	return dbs
@@ -357,7 +369,7 @@ func (self *ClusterConfiguration) addContinuousQuery(db string, query *Continuou
 
 	selectQuery, err := parser.ParseSelectQuery(query.Query)
 	if err != nil {
-		return fmt.Errorf("Failed to parse continuous query: %s", query)
+		return fmt.Errorf("Failed to parse continuous query: %s", query.Query)
 	}
 
 	if self.ParsedContinuousQueries[db] == nil {
@@ -412,7 +424,7 @@ func (self *ClusterConfiguration) GetDbUsers(db string) []common.User {
 
 	dbUsers := self.dbUsers[db]
 	users := make([]common.User, 0, len(dbUsers))
-	for name, _ := range dbUsers {
+	for name := range dbUsers {
 		dbUser := dbUsers[name]
 		users = append(users, dbUser)
 	}
@@ -482,10 +494,26 @@ func (self *ClusterConfiguration) GetClusterAdmins() (names []string) {
 	defer self.usersLock.RUnlock()
 
 	clusterAdmins := self.clusterAdmins
-	for name, _ := range clusterAdmins {
+	for name := range clusterAdmins {
 		names = append(names, name)
 	}
 	return
+}
+
+func (self *ClusterConfiguration) GetSubscriptions() (subs []int) {
+    // Do a little thing for locking subscriptions while this happens
+    self.subscriptionLock.RLock()
+    defer self.subscriptionLock.RUnlock()
+
+    subscriptions := self.subscriptions
+    // I don't get why first value from range is wanted.. isn't that the index
+    fmt.Printf("subscriptions %#v", subscriptions)
+    for sub1, sub2 := range subscriptions {
+        //subs = append(subs, int(sub))
+        fmt.Println("sub1 %#v", sub1)
+        fmt.Println("sub2 %#v", sub2)
+    }
+    return
 }
 
 func (self *ClusterConfiguration) GetClusterAdmin(username string) *ClusterAdmin {
@@ -510,6 +538,7 @@ type SavedConfiguration struct {
 	Databases         map[string]uint8
 	Admins            map[string]*ClusterAdmin
 	DbUsers           map[string]map[string]*DbUser
+    Subscriptions     map[string]*Subscription
 	Servers           []*ClusterServer
 	ShortTermShards   []*NewShardData
 	LongTermShards    []*NewShardData
@@ -525,12 +554,13 @@ func (self *ClusterConfiguration) Save() ([]byte, error) {
 		DbUsers:           self.dbUsers,
 		Servers:           self.servers,
 		ContinuousQueries: self.continuousQueries,
+        Subscriptions:     self.subscriptions,
 		ShortTermShards:   self.convertShardsToNewShardData(self.shortTermShards),
 		LongTermShards:    self.convertShardsToNewShardData(self.longTermShards),
 		LastShardIdUsed:   self.lastShardIdUsed,
 	}
 
-	for k, _ := range self.DatabaseReplicationFactors {
+	for k := range self.DatabaseReplicationFactors {
 		data.Databases[k] = 0
 	}
 
@@ -584,12 +614,13 @@ func (self *ClusterConfiguration) Recovery(b []byte) error {
 	}
 
 	self.DatabaseReplicationFactors = make(map[string]struct{}, len(data.Databases))
-	for k, _ := range data.Databases {
+	for k := range data.Databases {
 		self.DatabaseReplicationFactors[k] = struct{}{}
 	}
 	self.clusterAdmins = data.Admins
 	self.dbUsers = data.DbUsers
 	self.servers = data.Servers
+    self.subscriptions = data.Subscriptions
 
 	for _, server := range self.servers {
 		log.Info("Checking whether %s is the local server %s", server.RaftName, self.LocalRaftName)
@@ -684,7 +715,7 @@ func (self *ClusterConfiguration) SetLastContinuousQueryRunTime(t time.Time) {
 func (self *ClusterConfiguration) GetMapForJsonSerialization() map[string]interface{} {
 	jsonObject := make(map[string]interface{})
 	dbs := make([]string, 0)
-	for db, _ := range self.DatabaseReplicationFactors {
+	for db := range self.DatabaseReplicationFactors {
 		dbs = append(dbs, db)
 	}
 	jsonObject["databases"] = dbs
@@ -773,7 +804,7 @@ func (self *ClusterConfiguration) createShards(microsecondsEpoch int64, shardTyp
 			rf = len(self.servers)
 		}
 
-		for rf = rf; rf > 0; rf-- {
+		for ; rf > 0; rf-- {
 			if startIndex >= len(self.servers) {
 				startIndex = 0
 			}
@@ -895,6 +926,17 @@ func HashDbAndSeriesToInt(database, series string) int {
 		nInt = nInt * -1
 	}
 	return nInt
+}
+
+func (self *ClusterConfiguration) AddSubscription(subscription *Subscription) (*Subscription, error) {
+    self.subscriptionLock.Lock()
+    defer self.subscriptionLock.Unlock()
+
+    if subscription == nil {
+        return nil, errors.New("AddSubscription called without a subscription")
+    }
+
+    return nil, errors.New("chuwepee")
 }
 
 // Add shards expects all shards to be of the same type (long term or short term) and have the same

@@ -1,8 +1,10 @@
 package http
 
 import (
+	"bytes"
 	"cluster"
 	. "common"
+	"compress/gzip"
 	"coordinator"
 	"crypto/tls"
 	"encoding/base64"
@@ -18,32 +20,35 @@ import (
 	"strconv"
 	"strings"
 	"time"
+    "math/rand"
 
 	log "code.google.com/p/log4go"
 	"github.com/bmizerany/pat"
 )
 
 type HttpServer struct {
-	conn           net.Listener
-	sslConn        net.Listener
-	httpPort       string
-	httpSslPort    string
-	httpSslCert    string
-	adminAssetsDir string
-	coordinator    coordinator.Coordinator
-	userManager    UserManager
-	shutdown       chan bool
-	clusterConfig  *cluster.ClusterConfiguration
-	raftServer     *coordinator.RaftServer
-	readTimeout    time.Duration
+	conn                    net.Listener
+	sslConn                 net.Listener
+	httpPort                string
+	httpSslPort             string
+	httpSslCert             string
+	adminAssetsDir          string
+	coordinator             coordinator.Coordinator
+	userManager             UserManager
+    subscriptionManager     SubscriptionManager
+	shutdown                chan bool
+	clusterConfig           *cluster.ClusterConfiguration
+	raftServer              *coordinator.RaftServer
+	readTimeout             time.Duration
 }
 
-func NewHttpServer(httpPort string, readTimeout time.Duration, adminAssetsDir string, theCoordinator coordinator.Coordinator, userManager UserManager, clusterConfig *cluster.ClusterConfiguration, raftServer *coordinator.RaftServer) *HttpServer {
+func NewHttpServer(httpPort string, readTimeout time.Duration, adminAssetsDir string, theCoordinator coordinator.Coordinator, userManager UserManager, subscriptionManager SubscriptionManager, clusterConfig *cluster.ClusterConfiguration, raftServer *coordinator.RaftServer) *HttpServer {
 	self := &HttpServer{}
 	self.httpPort = httpPort
 	self.adminAssetsDir = adminAssetsDir
 	self.coordinator = theCoordinator
 	self.userManager = userManager
+    self.subscriptionManager = subscriptionManager
 	self.shutdown = make(chan bool, 2)
 	self.clusterConfig = clusterConfig
 	self.raftServer = raftServer
@@ -52,7 +57,7 @@ func NewHttpServer(httpPort string, readTimeout time.Duration, adminAssetsDir st
 }
 
 const (
-	INVALID_CREDENTIALS_MSG = "Invalid database/username/password"
+	INVALID_CREDENTIALS_MSG  = "Invalid database/username/password"
 	JSON_PRETTY_PRINT_INDENT = "    "
 )
 
@@ -88,7 +93,7 @@ func (self *HttpServer) registerEndpoint(p *pat.PatternServeMux, method string, 
 	version := self.clusterConfig.GetLocalConfiguration().Version
 	switch method {
 	case "get":
-		p.Get(pattern, HeaderHandler(f, version))
+		p.Get(pattern, CompressionHeaderHandler(f, version))
 	case "post":
 		p.Post(pattern, HeaderHandler(f, version))
 	case "del":
@@ -151,6 +156,15 @@ func (self *HttpServer) Serve(listener net.Listener) {
 
 	// return whether the cluster is in sync or not
 	self.registerEndpoint(p, "get", "/sync", self.isInSync)
+
+    // rgm-specific endpoints
+    self.registerEndpoint(p, "get", "/db/:db/subscriptions", self.listSubscriptions)
+    //self.registerEndpoint(p, "post", "/db/:db/queryCurrent/:id", self.queryCurrent)
+    //self.registerEndpoint(p, "post", "/db/:db/queryFollow", self.queryFollow)
+//    self.registerEndpoint(p, "post", "/db/:db/subscriptions/", self.subscribeCurrent)
+    self.registerEndpoint(p, "post", "/db/:db/subscriptions/", self.subscribeTimeSeries)
+    self.registerEndpoint(p, "del", "/db/:db/subscriptions/", self.unsubscribe)
+    self.registerEndpoint(p, "post", "/db/:db/querySub/", self.querySub)
 
 	if listener == nil {
 		self.startSsl(p)
@@ -350,12 +364,26 @@ func (self *HttpServer) writePoints(w libhttp.ResponseWriter, r *libhttp.Request
 	}
 
 	self.tryAsDbUserAndClusterAdmin(w, r, func(user User) (int, interface{}) {
-		series, err := ioutil.ReadAll(r.Body)
+		reader := r.Body
+		encoding := r.Header.Get("Content-Encoding")
+		switch encoding {
+		case "gzip":
+			reader, err = gzip.NewReader(r.Body)
+			if err != nil {
+				return libhttp.StatusInternalServerError, err.Error()
+			}
+		default:
+			// assume it's plain text
+		}
+
+		series, err := ioutil.ReadAll(reader)
 		if err != nil {
 			return libhttp.StatusInternalServerError, err.Error()
 		}
+		decoder := json.NewDecoder(bytes.NewBuffer(series))
+		decoder.UseNumber()
 		serializedSeries := []*SerializedSeries{}
-		err = json.Unmarshal(series, &serializedSeries)
+		err = decoder.Decode(&serializedSeries)
 		if err != nil {
 			return libhttp.StatusBadRequest, err.Error()
 		}
@@ -590,8 +618,10 @@ type ApiUser struct {
 }
 
 type UserDetail struct {
-	Name    string `json:"name"`
-	IsAdmin bool   `json:"isAdmin"`
+	Name     string `json:"name"`
+	IsAdmin  bool   `json:"isAdmin"`
+	WriteTo  string `json:"writeTo"`
+	ReadFrom string `json:"readFrom"`
 }
 
 type ContinuousQuery struct {
@@ -661,16 +691,21 @@ func (self *HttpServer) deleteClusterAdmin(w libhttp.ResponseWriter, r *libhttp.
 
 func (self *HttpServer) updateClusterAdmin(w libhttp.ResponseWriter, r *libhttp.Request) {
 	body, err := ioutil.ReadAll(r.Body)
+    fmt.Println("updatecluster r.Body %v: ", r.Body)
+    fmt.Println("updatecluster body %v: ", body)
 	if err != nil {
 		w.WriteHeader(libhttp.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
+        fmt.Println("wazup")
 		return
 	}
 
 	updateClusterAdminUser := &UpdateClusterAdminUser{}
-	json.Unmarshal(body, updateClusterAdminUser)
+    json.Unmarshal(body, updateClusterAdminUser)
+	fmt.Println("shuwepe.. %v", json.Unmarshal(body, updateClusterAdminUser))
 
 	newUser := r.URL.Query().Get(":user")
+    fmt.Println(newUser)
 
 	self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
 		if err := self.userManager.ChangeClusterAdminPassword(u, newUser, updateClusterAdminUser.Password); err != nil {
@@ -755,7 +790,7 @@ func (self *HttpServer) listDbUsers(w libhttp.ResponseWriter, r *libhttp.Request
 
 		users := make([]*UserDetail, 0, len(dbUsers))
 		for _, dbUser := range dbUsers {
-			users = append(users, &UserDetail{dbUser.GetName(), dbUser.IsDbAdmin(db)})
+			users = append(users, &UserDetail{dbUser.GetName(), dbUser.IsDbAdmin(db), dbUser.GetWritePermission(), dbUser.GetReadPermission()})
 		}
 		return libhttp.StatusOK, users
 	})
@@ -771,7 +806,7 @@ func (self *HttpServer) showDbUser(w libhttp.ResponseWriter, r *libhttp.Request)
 			return errorToStatusCode(err), err.Error()
 		}
 
-		userDetail := &UserDetail{user.GetName(), user.IsDbAdmin(db)}
+		userDetail := &UserDetail{user.GetName(), user.IsDbAdmin(db), user.GetWritePermission(), user.GetReadPermission()}
 
 		return libhttp.StatusOK, userDetail
 	})
@@ -1103,4 +1138,195 @@ func (self *HttpServer) convertShardsToMap(shards []*cluster.ShardData) []interf
 		result = append(result, s)
 	}
 	return result
+}
+
+/*
+func (self *HttpServer) queryCurrent() err {
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        id, err := strconv.ParseInt(r.URL.Query().Get(":id"), 10, 64)
+        if err != nil {
+                return libhttp.StatusInternalServerError, err.Error()
+        }
+        body, err := ioutil.ReadAll(r.Body)
+        if err != nil {
+                return libhttp.StatusInternalServerError, err.Error()
+        }
+        x
+    return nil
+}
+
+func (self *HttpServer) queryFollow() err {
+    return nil
+}
+*/
+
+type ClusterSubscriptions struct {
+    Ids         []int
+}
+
+func (self *HttpServer) listSubscriptions(w libhttp.ResponseWriter, r *libhttp.Request) {
+    fmt.Println("hello from http listsubscriptions")
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        subscriptionlist, err := self.subscriptionManager.ListSubscriptions(u)
+        if err != nil {
+            return errorToStatusCode(err), err.Error()
+        }
+        /*
+        subscriptionlist := []int{3}
+        subscriptions := make([]*ClusterSubscriptions, 0, len(subscriptionlist))
+        for sub1, sub2 := range subscriptions {
+            //subscriptions = append(subscriptions, &ClusterSubscriptions{sub})
+            fmt.Println("this is within loop of http listsubscriptions")
+            fmt.Printf("sub1 %+v: ", sub1)
+            fmt.Printf("sub2 %#v: ", sub2)
+        }
+        */
+        return libhttp.StatusOK, subscriptions
+    })
+}
+
+/*
+func (self *HttpServer) listClusterAdmins(w libhttp.ResponseWriter, r *libhttp.Request) {
+	self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+		names, err := self.userManager.ListClusterAdmins(u)
+		if err != nil {
+			return errorToStatusCode(err), err.Error()
+		}
+		users := make([]*ApiUser, 0, len(names))
+		for _, name := range names {
+			users = append(users, &ApiUser{name})
+		}
+		return libhttp.StatusOK, users
+	})
+}
+*/
+
+type SubscribeMe struct {
+    Ids         []int
+    Start       string
+    End         string
+}
+
+type SubscribeCurrTS struct {
+    Ids         []int
+    StartTm     time.Time
+    EndTm       time.Time
+    QTime       int64
+}
+
+type SerialMap struct {
+    Subscription    []*SubscribeCurrTS
+    UniqueIds       map[int]int
+    Counter         int
+}
+
+const (
+    UNIQUE_SUBSCRIBER_LIMIT = 10000
+)
+
+func msToTime(ms string) (time.Time, error) {
+    msInt, err := strconv.ParseInt(ms, 10, 64)
+    if err != nil {
+        return time.Time{}, err
+    }
+
+    return time.Unix(0, msInt*int64(time.Millisecond)), nil
+}
+
+func (self *HttpServer) subscribeTimeSeries(w libhttp.ResponseWriter, r *libhttp.Request) {
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        body, err := ioutil.ReadAll(r.Body)
+        if err != nil {
+                return libhttp.StatusInternalServerError, err.Error()
+        }
+        subscribeme := &SubscribeMe{}
+        err = json.Unmarshal(body, &subscribeme)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+        subscribeCurrTS := &SubscribeCurrTS{}
+        subscribeCurrTS.Ids = subscribeme.Ids
+        // Going to want a more robust converter in terms of input string (any format) to time.Time
+        subscribeCurrTS.StartTm, err = msToTime(subscribeme.Start)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+        subscribeCurrTS.EndTm, err = msToTime(subscribeme.End)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+        subscribeCurrTS.QTime = time.Now().Unix()
+        if err != nil {
+                return libhttp.StatusInternalServerError, err.Error()
+        }
+        serialMap := &SerialMap{}
+        serialMap.Subscription = append(serialMap.Subscription, subscribeCurrTS)
+        if serialMap.UniqueIds == nil {
+                serialMap.UniqueIds = make(map[int]int)
+        }
+        r := rand.Intn(UNIQUE_SUBSCRIBER_LIMIT)
+        fmt.Printf("Your unique subscription Id is %v, please append it to any querySub calls\n", r)
+        // Probably want to take an argument which is the person's ID
+        serialMap.UniqueIds[serialMap.Counter] = r
+        serialMap.Counter++
+        err := self.subscriptionManager.SubscribeTimeSeries(u)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+        return 0, nil
+    })
+}
+
+type Unsubscription struct {
+    Ids  []int
+}
+
+func (self *HttpServer) unsubscribe(w libhttp.ResponseWriter, r *libhttp.Request) {
+    fmt.Println("here in http unsubscribe")
+    body, err := ioutil.ReadAll(r.Body)
+    if err != nil {
+        w.WriteHeader(libhttp.StatusInternalServerError)
+        w.Write([]byte(err.Error()))
+        return
+    }
+    unsubscription := &Unsubscription{}
+    err = json.Unmarshal(body, &unsubscription)
+    if err != nil {
+        w.WriteHeader(libhttp.StatusInternalServerError)
+        w.Write([]byte(err.Error()))
+        return
+    }
+
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        //if err := self.subscriptionManager.Unsubscribe(u, id); err != nil {
+        //    return errorToStatusCode(err), err.Error()
+        //}
+        return libhttp.StatusOK, nil
+    })
+    fmt.Println("leaving http unsubscribe")
+}
+
+type QuerySub struct {
+    Ids     []int
+}
+
+//querysub function needs to just for each within throw out all of the info
+func (self *HttpServer) querySub(w libhttp.ResponseWriter, r *libhttp.Request) {
+    body, err := ioutil.ReadAll(r.Body)
+    // May want to switch to trying as cluster admin or just fixing the error to b better
+    if err != nil {
+        return
+    }
+    querySub := &QuerySub{}
+    err = json.Unmarshal(body, &querySub)
+    if err != nil {
+        return
+    }
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        //if err := self.subscriptionManager.QuerySub(querySub); err != nil {
+        //    return errorToStatusCode(err)
+        //}
+        return libhttp.StatusOK, nil
+    })
+    return
 }
