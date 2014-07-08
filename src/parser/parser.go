@@ -76,6 +76,11 @@ type DeleteQuery struct {
 	SelectDeleteCommonQuery
 }
 
+type SubscribeQuery struct {
+    SelectDeleteCommonQuery
+    Ids     []int
+}
+
 type Query struct {
 	QueryString     string
 	SelectQuery     *SelectQuery
@@ -83,6 +88,7 @@ type Query struct {
 	ListQuery       *ListQuery
 	DropSeriesQuery *DropSeriesQuery
 	DropQuery       *DropQuery
+    SubscribeQuery  *SubscribeQuery
 }
 
 func (self *IntoClause) GetString() string {
@@ -309,6 +315,7 @@ func setupSlice(hdr *reflect.SliceHeader, ptr unsafe.Pointer, size C.size_t) {
 }
 
 func GetGroupByClause(groupByClause *C.groupby_clause) (*GroupByClause, error) {
+	fmt.Println("ENTERED GETGROUPBYCLAUSE!!!")
 	if groupByClause == nil {
 		return &GroupByClause{Elems: nil}, nil
 	}
@@ -323,6 +330,8 @@ func GetGroupByClause(groupByClause *C.groupby_clause) (*GroupByClause, error) {
 
 	if groupByClause.fill_function != nil {
 		fun, err := GetValue(groupByClause.fill_function)
+		fmt.Print("GROUP BY CLAUSE: ")
+		fmt.Println(groupByClause.fill_function)
 		if err != nil {
 			return nil, err
 		}
@@ -486,8 +495,11 @@ func GetWhereCondition(condition *C.condition) (*WhereCondition, error) {
 	if condition.is_bool_expression != 0 {
 		expr, err := GetValue((*C.value)(condition.left))
 		if err != nil {
+			fmt.Println("PROB GETTING VALUE!!!")
 			return nil, err
 		}
+		fmt.Print("Expr: ")
+		fmt.Println(expr)
 		return &WhereCondition{
 			isBooleanExpression: true,
 			Left:                expr,
@@ -500,11 +512,13 @@ func GetWhereCondition(condition *C.condition) (*WhereCondition, error) {
 	var err error
 	c.Left, err = GetWhereCondition((*C.condition)(condition.left))
 	if err != nil {
+		fmt.Println("THERE WAS AN ERROR!!!")
 		return nil, err
 	}
 	c.Operation = C.GoString(condition.op)
 	c.Right, err = GetWhereCondition((*C.condition)(unsafe.Pointer(condition.right)))
-
+	fmt.Println("WHERE CONDITION EQUALS: ")
+	fmt.Println(c)
 	return c, err
 }
 
@@ -578,6 +592,7 @@ func ParseSelectQuery(query string) (*SelectQuery, error) {
 }
 
 func ParseQuery(query string) ([]*Query, error) {
+	//fmt.Println("REACHED HERE")
 	queryString := C.CString(query)
 	defer C.free(unsafe.Pointer(queryString))
 	q := C.parse_query(queryString)
@@ -623,6 +638,15 @@ func ParseQuery(query string) ([]*Query, error) {
 		}
 		return []*Query{{QueryString: query, DropSeriesQuery: dropSeriesQuery}}, nil
 	} else if q.drop_query != nil {
+		return []*Query{&Query{QueryString: query, DropQuery: &DropQuery{Id: int(q.drop_query.id)}}}, nil
+	} else if q.subscribe_query != nil {
+        subscribeQuery, err := parseSubscribeQuery(q.subscribe_query)
+        if err != nil {
+            return nil, err
+        }
+        // need to do something to extract the id somehow
+        return []*Query{&Query{QueryString: query, SubscribeQuery: subscribeQuery}}, nil
+    }
 		return []*Query{{QueryString: query, DropQuery: &DropQuery{Id: int(q.drop_query.id)}}}, nil
 	}
 	return nil, fmt.Errorf("Unknown query type encountered")
@@ -663,7 +687,6 @@ func parseSelectDeleteCommonQuery(fromClause *C.from_clause, whereCondition *C.c
 			return goQuery, err
 		}
 	}
-
 	var startTime, endTime *time.Time
 	goQuery.Condition, endTime, err = getTime(goQuery.GetWhereCondition(), false)
 	if err != nil {
@@ -682,7 +705,6 @@ func parseSelectDeleteCommonQuery(fromClause *C.from_clause, whereCondition *C.c
 	if startTime != nil {
 		goQuery.startTime = *startTime
 	}
-
 	return goQuery, nil
 }
 
@@ -741,5 +763,20 @@ func parseDeleteQuery(query *C.delete_query) (*DeleteQuery, error) {
 	if basicQuery.GetWhereCondition() != nil {
 		return nil, fmt.Errorf("Delete queries can't have where clause that don't reference time")
 	}
+	return goQuery, nil
+}
+
+func parseSubscribeQuery(q *C.subscribe_query) (*SubscribeQuery, error) {
+	basicQuery, err := parseSelectDeleteCommonQuery(q.from_clause, q.where_condition)
+	if err != nil {
+		return nil, err
+	}
+	goQuery := &SubscribeQuery{
+		SelectDeleteCommonQuery: basicQuery,
+	}
+	if basicQuery.GetWhereCondition() != nil {
+		return nil, fmt.Errorf("Subscribe queries can't have where clause that don't reference time")
+	}
+    // put some sort of check that there is an id associated with the thing
 	return goQuery, nil
 }

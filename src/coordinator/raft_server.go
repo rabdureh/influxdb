@@ -720,3 +720,23 @@ func (self *RaftServer) DropShard(id uint32, serverIds []uint32) error {
 	_, err := self.doOrProxyCommand(command)
 	return err
 }
+
+func (s *RaftServer) SaveSubscriptions(sub *cluster.Subscription) (*cluster.Subscription, error) {
+    command := NewSaveSubscriptionCommand(sub)
+    saveSubscriptionResult, err := s.doOrProxyCommand(command)
+    if err != nil {
+        log.Error("RAFT: SaveSubscription: ", err)
+        return nil, err
+    }
+    js, err := json.Marshal(saveSubscriptionResult)
+    if err != nil {
+        return nil, err
+    }
+    newSubscriptions := &cluster.Subscription
+    err = json.Unmarshal(js, &saveSubscriptionResult)
+    if err != nil {
+        return nil, err
+    }
+    log.Debug("NEW SUBSCRIPTIONS: %v", newSubscriptions)
+    return self.clusterConfig.MarshalToSubscriptions(newSubscriptions)
+}
