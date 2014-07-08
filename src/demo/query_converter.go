@@ -7,9 +7,8 @@ import (
 	"time"
 	"strings"
 	. "influxdb-go"
-	//"regexp"
+	"regexp"
 	"strconv"
-	"container/list"
 	"reflect"
 )
 
@@ -84,57 +83,83 @@ func QueryHandler(rgmQuery string) (string) {
 			fmt.Println("ANOTHER ERROR!")
 		}
 		
-		keywords := list.New() 
+		keywords := make(map[string]int)
 		for i := 1; i < len(tokenizedQuery); i++ {
-			fmt.Println(reflect.TypeOf(tokenizedQuery[i]))
-			keywords.PushBack(tokenizedQuery[i])
+			keywords[tokenizedQuery[i]] = 1
 		}	
-		//fmt.Println(keywords)
-		
+	
+		pointIndices := []int{}	
 		for index := range results {
+			fmt.Println(reflect.TypeOf(results))
 			points := results[index].GetPoints()
-			if len(points) == 0 {
-				fmt.Println("203")
-			} else if len(points) == 1 {
-				fmt.Println("201")
-			} else if len(points) > 1 {
-				fmt.Print("202")
-			}
-			fmt.Println(", " + strconv.Itoa(len(points)) + " matches found.")	
-			for _,point := range points {
-				pointKeywords := keywords
+			for i, point := range points {
+				pointKeywords := make(map[string]int)
+				for key := range keywords {
+					pointKeywords[key] = 1
+				}	
 				for _, elem := range point {
 					for keyword := range keywords {
 						if str, ok := elem.(string); ok {
 							match, _ := regexp.MatchString(keyword, str)
 							if match == true {
-								//fmt.Println(point[2])
-								//fmt.Println(elem)
-								keywords.remove(keyword)
-								//pointKeywords := append(pointKeywords, pointKeywords[:index])
-								//pointKeywords := append(pointKeywords, pointKeywords[index+1:])
+								delete(pointKeywords, keyword)
 							}
 						}
 					}
 				}
 				if len(pointKeywords) == 0 {
-					fmt.Println("Match found!")
-					fmt.Print("Point: ")
-					fmt.Println(point)
+					pointIndices = append(pointIndices, i)
 				}
 			}
+			if len(pointIndices) == 0 {
+				fmt.Print("203")
+			} else if len(pointIndices) == 1 {
+				fmt.Print("201")
+			} else if len(pointIndices) > 1 {
+				fmt.Print("202")
+			}
+			fmt.Println(", " + strconv.Itoa(len(pointIndices)) + " matches found.")	
+			for count := 0; count < len(pointIndices); count++ {
+				fmt.Println(points[pointIndices[count]])
+			}
 		}
-		
 		return rgmQ
 	
 	case keyQuery, keyQ:
-		rgmQ := "select * from " + timeSeries + " where num_vals_id = " + tokenizedQuery[1]
-		results, err := client.Query(rgmQ)
+		var results [][]*Series
+		rgmQ := ""
+		if strings.EqualFold(tokenizedQuery[1], "*") {
+			rgmQ := "select * from " + timeSeries
+			results, err := client.Query(rgmQ)
+			if err != nil {
+				fmt.Println("Invalid query!")
+				return rgmQ
+			}
+			fmt.Println(results)
+		} else {
+			for counter := 1; counter < len(tokenizedQuery); counter++ {
+				rgmQ := "select * from " + timeSeries + " where num_vals_id = " + tokenizedQuery[counter]
+				result, err := client.Query(rgmQ)
+				if err != nil {
+					fmt.Println("Invalid Query!")
+					return rgmQ
+				}
+				//results[counter] = result
+				results = append(results, result)
+			}
+		}
+		
+		//results, err := client.Query(rgmQ)
 		if err != nil {
 			fmt.Println("Another err!")
 		}
-		for index := range results {
+		
+		fmt.Println(reflect.TypeOf(results))
+		/*
+		for elem := results.Front(); elem != nil; elem = elem.Next() {
 			points := results[index].GetPoints()
+			fmt.Println(reflect.TypeOf(elem))
+			points = elem.GetPoints()	
 			if len(points) == 0 {
 				fmt.Print("203")
 			} else if len(points) == 1 {
@@ -147,16 +172,15 @@ func QueryHandler(rgmQuery string) (string) {
 				fmt.Println(point[2])
 				for _, elem := range point {
 					if str, ok := elem.(string); ok {
-						//match, _ := regexp.MatchString(strings.Replace(tokenizedQuery[1], "\"", "", -1), str)
-						//if match == true {
-						//fmt.Println(point[2])
 						fmt.Print(str + " ")
-						//}
 					}
 				}
 				fmt.Println()
 			}
-		}		
+			
+		}
+		*/
+		
 		return rgmQ
 	case tsQuery, tsQ:
 		rgmQ := ""
