@@ -1201,17 +1201,19 @@ func (self *HttpServer) listClusterAdmins(w libhttp.ResponseWriter, r *libhttp.R
 }
 */
 
+/*
 type SubscribeMe struct {
     Ids         []int
     Start       string
     End         string
 }
+*/
 
-type SubscribeCurrTS struct {
-    Ids         []int
-    StartTm     time.Time
-    EndTm       time.Time
-    QTime       int64
+type newSupscriptionInfo struct {
+    Ids         []int `json:"ids"`
+    StartTm     int64 `json:"startTm"`
+    EndTm       int64 `json:"endTm"`
+    QTime       int64 `json:"qTm"`
 }
 
 type SerialMap struct {
@@ -1235,15 +1237,23 @@ func msToTime(ms string) (time.Time, error) {
 
 func (self *HttpServer) subscribeTimeSeries(w libhttp.ResponseWriter, r *libhttp.Request) {
     self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        newSubscriptions := newSubscriptionInfo{}
         body, err := ioutil.ReadAll(r.Body)
         if err != nil {
                 return libhttp.StatusInternalServerError, err.Error()
         }
+        /*
         subscribeme := &SubscribeMe{}
         err = json.Unmarshal(body, &subscribeme)
         if err != nil {
             return libhttp.StatusInternalServerError, err.Error()
         }
+        */
+        err = json.Unmarshal(body, &newSubscriptions)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+        /*
         subscribeCurrTS := &SubscribeCurrTS{}
         subscribeCurrTS.Ids = subscribeme.Ids
         // Going to want a more robust converter in terms of input string (any format) to time.Time
@@ -1259,6 +1269,14 @@ func (self *HttpServer) subscribeTimeSeries(w libhttp.ResponseWriter, r *libhttp
         if err != nil {
                 return libhttp.StatusInternalServerError, err.Error()
         }
+        */
+        newSubscriptionData := &cluster.Subscription{
+                Ids:     newSubscriptions.Ids,
+                StartTm: time.Unix(newSubscriptions.StartTm, 0),
+                EndTm:   time.Unix(newSubscriptions.EndTm, 0),
+                QTime:   time.Now().Unix(),
+        }
+        /*
         serialMap := &SerialMap{}
         serialMap.Subscription = append(serialMap.Subscription, subscribeCurrTS)
         if serialMap.UniqueIds == nil {
@@ -1269,11 +1287,13 @@ func (self *HttpServer) subscribeTimeSeries(w libhttp.ResponseWriter, r *libhttp
         // Probably want to take an argument which is the person's ID
         serialMap.UniqueIds[serialMap.Counter] = r
         serialMap.Counter++
-        err := self.subscriptionManager.SubscribeTimeSeries(u)
+        */
+        //err := self.subscriptionManager.SubscribeTimeSeries(u)
+        _, err = self.raftServer.SaveSubscriptions()
         if err != nil {
             return libhttp.StatusInternalServerError, err.Error()
         }
-        return 0, nil
+        return libhttp.StatusAccepted, nil
     })
 }
 
