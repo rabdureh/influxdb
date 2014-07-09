@@ -20,6 +20,7 @@ func (self *WhereCondition) GetBoolExpression() (*Value, bool) {
 
 func (self *WhereCondition) GetLeftWhereCondition() (*WhereCondition, bool) {
 	if !self.isBooleanExpression {
+		fmt.Println("IS A BOOL EXPRESSION.")
 		return self.Left.(*WhereCondition), true
 	}
 	return nil, false

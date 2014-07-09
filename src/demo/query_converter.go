@@ -130,7 +130,7 @@ func QueryHandler(rgmQuery string) (string) {
 		rgmQ := ""
 		if strings.EqualFold(tokenizedQuery[1], "*") {
 			rgmQ := "select * from " + timeSeries
-			result, err := client.Query(rgmQ)
+			results, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid query!")
 				return rgmQ
@@ -147,10 +147,6 @@ func QueryHandler(rgmQuery string) (string) {
 				results = append(results, result)
 			}
 		}
-		if err != nil {
-			fmt.Println("Another err!")
-		}
-		
 		for _, elem := range results {
 			for _, series := range elem {
 				points := series.GetPoints()	
@@ -173,7 +169,6 @@ func QueryHandler(rgmQuery string) (string) {
 				}
 			}
 		}
-		
 		
 		return rgmQ
 	case tsQuery, tsQ:
