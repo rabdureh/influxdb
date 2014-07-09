@@ -90,7 +90,7 @@ func QueryHandler(rgmQuery string) (string) {
 	
 		pointIndices := []int{}	
 		for index := range results {
-			fmt.Println(reflect.TypeOf(results[index]))
+			fmt.Println(reflect.TypeOf(results))
 			points := results[index].GetPoints()
 			for i, point := range points {
 				pointKeywords := make(map[string]int)
@@ -130,14 +130,12 @@ func QueryHandler(rgmQuery string) (string) {
 		rgmQ := ""
 		if strings.EqualFold(tokenizedQuery[1], "*") {
 			rgmQ := "select * from " + timeSeries
-			//fmt.Println(results)
-			results, err := client.Query(rgmQ)
+			result, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid query!")
 				return rgmQ
 			}
-			//fmt.Println("Found a placeholder!")
-			fmt.Println(results)
+			results = append(results, result)
 		} else {
 			for counter := 1; counter < len(tokenizedQuery); counter++ {
 				rgmQ := "select * from " + timeSeries + " where num_vals_id = " + tokenizedQuery[counter]
@@ -153,34 +151,27 @@ func QueryHandler(rgmQuery string) (string) {
 			fmt.Println("Another err!")
 		}
 		
-		fmt.Println(results)
-		fmt.Println(reflect.TypeOf(results))
-		fmt.Println("Size: " + strconv.Itoa(len(results)))	
-		for index := range results {
-			//points := results[index].GetPoints()
-			fmt.Println("Looping")	
-			fmt.Println(reflect.TypeOf(results[index]))
-			/*
-			points = elem.GetPoints()	
-			if len(points) == 0 {
-				fmt.Print("203")
-			} else if len(points) == 1 {
-				fmt.Print("201")
-			} else if len(points) > 1 {
-				fmt.Print("202")
-			}
-			fmt.Println(", " + strconv.Itoa(len(points)) + " matches found.")
-			for _,point := range points {
-				fmt.Println(point[2])
-				for _, elem := range point {
-					if str, ok := elem.(string); ok {
-						fmt.Print(str + " ")
-					}
+		for _, elem := range results {
+			for _, series := range elem {
+				points := series.GetPoints()	
+				if len(points) == 0 {
+					fmt.Print("203")
+				} else if len(points) == 1 {
+					fmt.Print("201")
+				} else if len(points) > 1 {
+					fmt.Print("202")
 				}
-				fmt.Println()
+				fmt.Println(", " + strconv.Itoa(len(points)) + " matches found.")
+				for _,point := range points {
+					fmt.Println(point[2])
+					for _, elem := range point {
+						if str, ok := elem.(string); ok {
+							fmt.Print(str + " ")
+						}
+					}
+					fmt.Println()
+				}
 			}
-			*/
-			
 		}
 		
 		
