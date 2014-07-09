@@ -168,11 +168,12 @@ func (self *SelectQuery) getColumns(includeWhereClause bool) map[*Value][]string
 		if len(returnedMapping[value]) > 1 && returnedMapping[value][0] == "*" {
 			returnedMapping[value] = returnedMapping[value][:1]
 		}
-
 		delete(mapping, name)
 	}
 
 	if len(mapping) == 0 {
+		fmt.Println("RET EARLY?!")
+		
 		return returnedMapping
 	}
 
@@ -189,7 +190,8 @@ func (self *SelectQuery) getColumns(includeWhereClause bool) map[*Value][]string
 		}
 		delete(mapping, prefix)
 	}
-
+	//fmt.Print("MAP: ")
+	//fmt.Println(returnedMapping)
 	return returnedMapping
 }
 
@@ -303,19 +305,26 @@ func parseTime(value *Value) (int64, error) {
 func getReferencedColumnsFromValue(v *Value, mapping map[string][]string) (notAssigned []string) {
 	switch v.Type {
 	case ValueSimpleName, ValueTableName:
+		//fmt.Println("NORMAL EXEC!!")
 		if idx := strings.LastIndex(v.Name, "."); idx != -1 {
 			tableName := v.Name[:idx]
 			columnName := v.Name[idx+1:]
 			mapping[tableName] = append(mapping[tableName], columnName)
 			return
 		}
+		//fmt.Println("DIDN'T ENTER IF!!")
 		notAssigned = append(notAssigned, v.Name)
+		//fmt.Print("NOT ASSIGNED: ")
+		//fmt.Println(notAssigned)
 	case ValueWildcard:
 		notAssigned = append(notAssigned, "*")
+		//fmt.Println("HAS A WILDCARD!")
 	case ValueExpression, ValueFunctionCall:
+		//fmt.Println("IS AN EXPRESSION!")
 		for _, value := range v.Elems {
 			newNotAssignedColumns := getReferencedColumnsFromValue(value, mapping)
 			if len(newNotAssignedColumns) > 0 && newNotAssignedColumns[0] == "*" {
+				//fmt.Println("IN THIS WEIRD IF!")
 				newNotAssignedColumns = newNotAssignedColumns[1:]
 			}
 
@@ -326,12 +335,12 @@ func getReferencedColumnsFromValue(v *Value, mapping map[string][]string) (notAs
 }
 
 func getReferencedColumnsFromCondition(condition *WhereCondition, mapping map[string][]string) (notPrefixed []string) {
+	//fmt.Println(condition)
 	if left, ok := condition.GetLeftWhereCondition(); ok {
 		notPrefixed = append(notPrefixed, getReferencedColumnsFromCondition(left, mapping)...)
 		notPrefixed = append(notPrefixed, getReferencedColumnsFromCondition(condition.Right, mapping)...)
 		return
 	}
-
 	expr, _ := condition.GetBoolExpression()
 	notPrefixed = append(notPrefixed, getReferencedColumnsFromValue(expr, mapping)...)
 	return

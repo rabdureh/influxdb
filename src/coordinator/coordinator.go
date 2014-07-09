@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	log "code.google.com/p/log4go"
 )
 
@@ -82,7 +81,6 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 
 	for _, query := range q {
 		querySpec := parser.NewQuerySpec(user, database, query)
-
 		if query.DeleteQuery != nil {
 			if err := self.clusterConfiguration.CreateCheckpoint(); err != nil {
 				return err
@@ -134,6 +132,8 @@ func (self *CoordinatorImpl) RunQuery(user common.User, database string, querySt
 		if err := self.checkPermission(user, querySpec); err != nil {
 			return err
 		}
+		fmt.Println("RUNNING SELECT QUERY!!")
+		fmt.Println(self.runQuery(querySpec, seriesWriter))
 		return self.runQuery(querySpec, seriesWriter)
 	}
 	seriesWriter.Close()
@@ -326,7 +326,6 @@ func (self *CoordinatorImpl) getShardsAndProcessor(querySpec *parser.QuerySpec, 
 			}
 		}
 	}()
-
 	return shards, processor, seriesClosed, nil
 }
 
@@ -447,7 +446,7 @@ func (self *CoordinatorImpl) runQuerySpec(querySpec *parser.QuerySpec, seriesWri
 	// make sure we read the rest of the errors and responses
 	for _err := range errors {
 		if err == nil {
-			err = _err
+				err = _err
 		}
 	}
 
@@ -804,6 +803,30 @@ func (self *CoordinatorImpl) ListDatabases(user common.User) ([]*cluster.Databas
 	return dbs, nil
 }
 
+func (self *CoordinatorImpl) ListSubscriptions(user common.User) error /*([]*Subscription, error)*/ {
+    if !user.IsClusterAdmin() {
+        return common.NewAuthorizationError("Insufficient permissions to list subscriptions")
+    }
+
+    fmt.Println("I reached coordinator listsubscriptions")
+    subscriptions := self.clusterConfiguration.GetSubscriptions()
+    fmt.Println(subscriptions)
+    return nil
+    //return subscriptions, nil
+}
+
+func (self *CoordinatorImpl) SubscribeTimeSeries(user common.User) error /*([]*Subscription, error)*/ {
+    if !user.IsClusterAdmin() {
+        return common.NewAuthorizationError("Insufficient permissions to make a subscription")
+    }
+
+    fmt.Println("subscribing to a database")
+
+    //subscriptions := self.clusterConfiguration.GetSubscriptions()
+    //return subscriptions, nil
+    return nil
+}
+
 func (self *CoordinatorImpl) DropDatabase(user common.User, db string) error {
 	if ok, err := self.permissions.AuthorizeDropDatabase(user); !ok {
 		return err
@@ -848,6 +871,15 @@ func (self *CoordinatorImpl) ListClusterAdmins(requester common.User) ([]string,
 	}
 
 	return self.clusterConfiguration.GetClusterAdmins(), nil
+}
+
+func (self *CoordinatorImpl) CreateSubscription(requester common.User, subscription *cluster.Subscription) error {
+    if !requester.IsClusterAdmin() {
+        return common.NewAuthorizationError("Insufficient permissions")
+    }
+
+    return self.raftServer.SaveSubscription(subscription)
+    return nil
 }
 
 func (self *CoordinatorImpl) CreateClusterAdminUser(requester common.User, username, password string) error {
@@ -902,6 +934,16 @@ func (self *CoordinatorImpl) ChangeClusterAdminPassword(requester common.User, u
 	user.ChangePassword(string(hash))
 	return self.raftServer.SaveClusterAdminUser(user)
 }
+
+/*
+func (self *CoordinatorImpl) Unsubscribe(requester common.User, ids []int) error {
+    if !requester.IsClusterAdmin() {
+        return common.NewAuthorizationError("Insufficient permissions")
+    }
+
+    x
+}
+*/
 
 func (self *CoordinatorImpl) CreateDbUser(requester common.User, db, username, password string, permissions ...string) error {
 	if ok, err := self.permissions.AuthorizeCreateDbUser(requester, db); !ok {
