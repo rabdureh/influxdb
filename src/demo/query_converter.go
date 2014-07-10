@@ -9,7 +9,6 @@ import (
 	. "influxdb-go"
 	"regexp"
 	"strconv"
-	"reflect"
 )
 
 const (
@@ -32,6 +31,14 @@ const (
 	qsubQ = "QS"
 	qsubQuery = "Query-Sub"
 	timeSeries = "ts_data.txt"
+	year = "[0-9]{4,4}"
+	month = "[0-9]{2,2}"
+	day = "[0-9]{2,2}"
+	hour = "[0-9]{2,2}"
+	min = "[0-9]{2,2}"
+	sec = "[0-9]{2,2}"
+	ymdhmsz = year + "-" + month + "-" + day + " " + hour + ":" + min + ":" + sec
+	mdyhmsz = month + "-" + day + "-" + year + " " + hour + ":" + min + ":" + sec
 )
 
 /*
@@ -70,11 +77,15 @@ type RGMCommand struct {
 
 func QueryHandler(rgmQuery string) (string) {
 	tokenizedQuery := strings.Fields(rgmQuery)	
-	//tokenizedQuery[0] = strings.Replace(tokenizedQuery[0], "\"", "", -1)
 	client, err := NewClient(&ClientConfig{})
 	if err != nil {
 		fmt.Println("error occured!")
 	}
+
+	if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3])) == true  
+	starttime := tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]
+	endtime := tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]
+	
 	switch tokenizedQuery[0] {
 	case idQuery, idQ:
 		rgmQ := "select * from " + timeSeries //+ " where num_vals_tm > " + tokenizedQuery[len(tokenizedQuery) - 2] + " and num_vals_tm < " + tokenizedQuery[len(tokenizedQuery) - 1]
@@ -88,26 +99,37 @@ func QueryHandler(rgmQuery string) (string) {
 			keywords[tokenizedQuery[i]] = 1
 		}	
 	
-		pointIndices := []int{}	
 		for index := range results {
-			fmt.Println(reflect.TypeOf(results))
+			pointIndices := []int{}
 			points := results[index].GetPoints()
 			for i, point := range points {
 				pointKeywords := make(map[string]int)
 				for key := range keywords {
 					pointKeywords[key] = 1
-				}	
-				for _, elem := range point {
-					for keyword := range keywords {
+				}
+				pointMatches := []string{}
+				for keyword := range keywords {
+					for _, elem := range point {
 						if str, ok := elem.(string); ok {
 							match, _ := regexp.MatchString(keyword, str)
+							//fmt.Println("Expression: " + keyword)
+							//fmt.Println("String: " + str)
 							if match == true {
-								delete(pointKeywords, keyword)
+								alreadyUsed := false
+								for _, word := range pointMatches {
+									if strings.EqualFold(word, str) {
+										alreadyUsed = true
+									}
+								}
+								if !alreadyUsed {
+									delete(pointKeywords, keyword)
+									//fmt.Println("MATCH!")
+								}
 							}
 						}
 					}
 				}
-				if len(pointKeywords) == 0 {
+				if len(pointKeywords) == 0 || (len(pointKeywords) == 1 && pointKeywords["*"] == 1) {
 					pointIndices = append(pointIndices, i)
 				}
 			}
@@ -120,7 +142,7 @@ func QueryHandler(rgmQuery string) (string) {
 			}
 			fmt.Println(", " + strconv.Itoa(len(pointIndices)) + " matches found.")	
 			for count := 0; count < len(pointIndices); count++ {
-				fmt.Println(points[pointIndices[count]])
+				fmt.Printf("%v\t %v\n", points[pointIndices[count]][2], points[pointIndices[count]])
 			}
 		}
 		return rgmQ
@@ -130,12 +152,14 @@ func QueryHandler(rgmQuery string) (string) {
 		rgmQ := ""
 		if strings.EqualFold(tokenizedQuery[1], "*") {
 			rgmQ := "select * from " + timeSeries
+			//fmt.Println(results)
 			results, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid query!")
 				return rgmQ
 			}
-			results = append(results, result)
+			//fmt.Println("Found a placeholder!")
+			fmt.Println(results)
 		} else {
 			for counter := 1; counter < len(tokenizedQuery); counter++ {
 				rgmQ := "select * from " + timeSeries + " where num_vals_id = " + tokenizedQuery[counter]
@@ -147,9 +171,16 @@ func QueryHandler(rgmQuery string) (string) {
 				results = append(results, result)
 			}
 		}
-		for _, elem := range results {
-			for _, series := range elem {
-				points := series.GetPoints()	
+		if err != nil {
+			fmt.Println("Another err!")
+		}
+		
+		for _, result := range results {
+			//points := results[index].GetPoints()
+			//fmt.Println("Looping")	
+			//fmt.Println(reflect.TypeOf(results[index]))
+			for _, elem := range result {
+				points := elem.GetPoints()	
 				if len(points) == 0 {
 					fmt.Print("203")
 				} else if len(points) == 1 {
@@ -159,17 +190,10 @@ func QueryHandler(rgmQuery string) (string) {
 				}
 				fmt.Println(", " + strconv.Itoa(len(points)) + " matches found.")
 				for _,point := range points {
-					fmt.Println(point[2])
-					for _, elem := range point {
-						if str, ok := elem.(string); ok {
-							fmt.Print(str + " ")
-						}
-					}
-					fmt.Println()
+					fmt.Printf("%v\t %v\n", point[2], point)
 				}
 			}
 		}
-		
 		return rgmQ
 	case tsQuery, tsQ:
 		rgmQ := ""
@@ -198,6 +222,23 @@ func QueryHandler(rgmQuery string) (string) {
 	
 	return rgmQuery
 }
+
+func isDateTime(datetime string) (bool) {                                                                                                                                                                                                                                   
+	
+	match, _ := regexp.MatchString(ymdhmsz, datetime) 
+	if match == true {
+		//fmt.Println("FOUND YMDHMSZ!!")
+		return true
+	} else {
+		match, _ := regexp.MatchString(mdyhmsz, datetime)
+		if match == true {
+			//fmt.Println("FOUND MDYHMSZ!!")
+			return true
+        	}
+	}       
+	return false 
+}
+
 
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
