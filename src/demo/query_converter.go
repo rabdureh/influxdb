@@ -82,44 +82,52 @@ func QueryHandler(rgmQuery string) (string) {
 	if err != nil {
 		fmt.Println("error occured!")
 	}
-	starttime := ""
-	endtime := ""
+	//starttime := ""
+	//endtime := ""
 	var starttimeunix int64
 	var endtimeunix int64
-	t, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 1], 10, 64)
-	if err != nil && t > 1000 {
+	starttime, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 1], 10, 64)
+	starttimeunix = starttime
+	if err != nil && starttimeunix > 1000 {
 		fmt.Println("First Case!")
-		starttime = tokenizedQuery[len(tokenizedQuery) - 1]
+		//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 1]
 		time, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 2], 10, 64)
 		if err != nil && time > 1000 {
-			endtime = starttime
-			starttime = tokenizedQuery[len(tokenizedQuery) - 2]
+			endtimeunix = starttimeunix
+			starttimeunix = time
+			//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 2]
 		}
 	} else if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])) { 
 		fmt.Println("Second Case!")
 		starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])
+		starttimeunix = starttime.Unix()
 		if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3])) == true {
-			endtimeunix = starttime.Unix()
+			endtimeunix = starttimeunix
 			starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) 
 			starttimeunix = starttime.Unix()
 		}
 	}
 	switch tokenizedQuery[0] {
 	case idQuery, idQ:
-		rgmQ := "select * from " + timeSeries //+ " where num_vals_tm > " + tokenizedQuery[len(tokenizedQuery) - 2] + " and num_vals_tm < " + tokenizedQuery[len(tokenizedQuery) - 1]
-		if starttime != "" {
+		rgmQ := "select * from " + timeSeries 
+		keywordBuffer := 0	
+		if starttimeunix >= 0 {
 			rgmQ = rgmQ + " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
+			keywordBuffer += 2
 		}
-		if endtime != "" {
+		if endtimeunix > 0 {
 			rgmQ = rgmQ + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
+			keywordBuffer += 2
 		}
+		fmt.Printf("InfluxQuery: %v\n", rgmQ)
 		results, err := client.Query(rgmQ)
+		//fmt.Printf("Results: %v\n", results)
 		if err != nil {
 			fmt.Println("ANOTHER ERROR!")
 		}
 		
 		keywords := make(map[string]int)
-		for i := 1; i < len(tokenizedQuery); i++ {
+		for i := 1; i < len(tokenizedQuery) - keywordBuffer; i++ {
 			keywords[tokenizedQuery[i]] = 1
 		}	
 	
