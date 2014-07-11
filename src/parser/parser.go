@@ -646,8 +646,8 @@ func ParseQuery(query string) ([]*Query, error) {
         }
         // need to do something to extract the id somehow
         return []*Query{&Query{QueryString: query, SubscribeQuery: subscribeQuery}}, nil
-    }
-		return []*Query{{QueryString: query, DropQuery: &DropQuery{Id: int(q.drop_query.id)}}}, nil
+    	}
+	return []*Query{{QueryString: query, DropQuery: &DropQuery{Id: int(q.drop_query.id)}}}, nil
 	}
 	return nil, fmt.Errorf("Unknown query type encountered")
 }

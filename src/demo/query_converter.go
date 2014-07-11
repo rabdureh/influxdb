@@ -84,9 +84,9 @@ func QueryHandler(rgmQuery string) (string) {
 	}
 	starttime := ""
 	endtime := ""
+	var starttimeunix int64
+	var endtimeunix int64
 	t, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 1], 10, 64)
-	//fmt.Printf("Time: %v\n", t)
-	//fmt.Printf("Error: %v\n", err)
 	if err != nil && t > 1000 {
 		fmt.Println("First Case!")
 		starttime = tokenizedQuery[len(tokenizedQuery) - 1]
@@ -97,25 +97,21 @@ func QueryHandler(rgmQuery string) (string) {
 		}
 	} else if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])) { 
 		fmt.Println("Second Case!")
-		starttime = tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]
+		starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])
 		if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3])) == true {
-			endtime = starttime
-			starttime = tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]
+			endtimeunix = starttime.Unix()
+			starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) 
+			starttimeunix = starttime.Unix()
 		}
 	}
-	//fmt.Println((isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])))
-	//fmt.Println(starttime)
-	//fmt.Println(endtime)
-	fmt.Printf("Unix start-time: %v\n", time.Date(starttime))
-	fmt.Printf("Unix end-time: %v\n", time.Date(endtime))
 	switch tokenizedQuery[0] {
 	case idQuery, idQ:
 		rgmQ := "select * from " + timeSeries //+ " where num_vals_tm > " + tokenizedQuery[len(tokenizedQuery) - 2] + " and num_vals_tm < " + tokenizedQuery[len(tokenizedQuery) - 1]
-		if starttime != nil {
-			rgmQ = rgmQ + " where num_vals_tm > " + starttime
+		if starttime != "" {
+			rgmQ = rgmQ + " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
 		}
-		if endtime != nil {
-			rgmQ = rgmQ + " and num_vals_tm < " + endtime
+		if endtime != "" {
+			rgmQ = rgmQ + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
 		}
 		results, err := client.Query(rgmQ)
 		if err != nil {
@@ -319,6 +315,41 @@ func isValidTime(time []string) (bool) {
 		return true
 	}
 	return false
+}
+
+func getDateFromString (datestring string) (time.Time, error) {
+	//m, _ := strconv.ParseInt(datestring[5:7], 10, 0)
+	date := strings.Split(datestring, " ")[0]
+	timestring := strings.Split(datestring, " ")[1]
+	ymd := strings.Split(date, "-")
+	hms := strings.Split(timestring, ":")
+	intDates := []int{}
+	for _, val := range ymd {
+		var intDate int
+		int64Date, err := strconv.ParseInt(val, 0, 0)
+		intDate = int(int64Date)
+		//fmt.Println(reflect.TypeOf(strconv.ParseInt(val, 0, 0)))
+		intDates = append(intDates, intDate)
+		if err != nil {
+			return time.Now(), err
+		}
+	}
+	intTimes := []int{}
+	for _, val := range hms {
+		var intTime int
+		int64Time, err := strconv.ParseInt(val, 0, 0)
+		intTime = int(int64Time)
+		//fmt.Println(reflect.TypeOf(strconv.ParseInt(val, 0, 0)))
+		intTimes = append(intTimes, intTime)
+		if err != nil {
+			return time.Now(), err 
+		}
+	}
+	//fmt.Printf("Date time: %v\n", intDates)
+	//fmt.Printf("Int time: %v\n", intTimes)
+	//return time.Now(), nil 
+	return time.Date(intDates[0], time.Month(intDates[1]), intDates[2], intTimes[0], intTimes[1], intTimes[2], 0, time.UTC), nil
+	//return time.Now() 
 }
 
 func main() {
