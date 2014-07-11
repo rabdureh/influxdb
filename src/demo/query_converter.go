@@ -9,6 +9,7 @@ import (
 	. "influxdb-go"
 	"regexp"
 	"strconv"
+	//"reflect"
 )
 
 const (
@@ -81,14 +82,41 @@ func QueryHandler(rgmQuery string) (string) {
 	if err != nil {
 		fmt.Println("error occured!")
 	}
-
-	if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3])) == true  
-	starttime := tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]
-	endtime := tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]
-	
+	starttime := ""
+	endtime := ""
+	t, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 1], 10, 64)
+	//fmt.Printf("Time: %v\n", t)
+	//fmt.Printf("Error: %v\n", err)
+	if err != nil && t > 1000 {
+		fmt.Println("First Case!")
+		starttime = tokenizedQuery[len(tokenizedQuery) - 1]
+		time, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 2], 10, 64)
+		if err != nil && time > 1000 {
+			endtime = starttime
+			starttime = tokenizedQuery[len(tokenizedQuery) - 2]
+		}
+	} else if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])) { 
+		fmt.Println("Second Case!")
+		starttime = tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]
+		if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3])) == true {
+			endtime = starttime
+			starttime = tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]
+		}
+	}
+	//fmt.Println((isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])))
+	//fmt.Println(starttime)
+	//fmt.Println(endtime)
+	fmt.Printf("Unix start-time: %v\n", time.Date(starttime))
+	fmt.Printf("Unix end-time: %v\n", time.Date(endtime))
 	switch tokenizedQuery[0] {
 	case idQuery, idQ:
 		rgmQ := "select * from " + timeSeries //+ " where num_vals_tm > " + tokenizedQuery[len(tokenizedQuery) - 2] + " and num_vals_tm < " + tokenizedQuery[len(tokenizedQuery) - 1]
+		if starttime != nil {
+			rgmQ = rgmQ + " where num_vals_tm > " + starttime
+		}
+		if endtime != nil {
+			rgmQ = rgmQ + " and num_vals_tm < " + endtime
+		}
 		results, err := client.Query(rgmQ)
 		if err != nil {
 			fmt.Println("ANOTHER ERROR!")
@@ -223,53 +251,81 @@ func QueryHandler(rgmQuery string) (string) {
 	return rgmQuery
 }
 
-func isDateTime(datetime string) (bool) {                                                                                                                                                                                                                                   
-	
+func isDateTime(datetime string) (bool) { 
+	//fmt.Printf("Datetime: %v\n", datetime)
+	//re := regexp.MustCompile(month)
+	//fmt.Printf("Month: %v\n", re.FindString(datetime))
+	//strings.Split(datetime, "-")
+	//fmt.Println(len(strings.Split(datetime, " ")))
+	date := strings.Split(datetime, " ")[0]
+	time := strings.Split(datetime, " ")[1]
+	ymd := strings.Split(date, "-")
+	hms := strings.Split(time, ":")
 	match, _ := regexp.MatchString(ymdhmsz, datetime) 
 	if match == true {
-		//fmt.Println("FOUND YMDHMSZ!!")
-		return true
+		//ymd := strings.Split(datetime, "-")
+		//hms := strings.Split(datetime, ":")
+		if isValidDate(ymd, true) && isValidTime(hms) {
+			//fmt.Println("FOUND YMDHMSZ!!")
+			return true
+		}
 	} else {
 		match, _ := regexp.MatchString(mdyhmsz, datetime)
 		if match == true {
-			//fmt.Println("FOUND MDYHMSZ!!")
-			return true
-        	}
+			if isValidDate(ymd, false) && isValidTime(hms) {
+				//fmt.Println("FOUND MDYHMSZ!!")
+				return true
+        		}
+		}
 	}       
 	return false 
 }
 
+// If YMD format is passed the isymd is true, otherwise false.
+
+func isValidDate(date []string, isymd bool) (bool) {
+	//fmt.Printf("Date: %v\n", date)
+	intDates := []int64{}
+	for _, val := range date {
+		intDate, err := strconv.ParseInt(val, 10, 32)
+		intDates = append(intDates, intDate)
+		if err != nil {
+			return false
+		}
+		//fmt.Println(reflect.TypeOf(val))
+	}
+	if (isymd) {
+		if (intDates[1] >= 1 && intDates[1] <= 12 && intDates[2] >= 1 && intDates[2] <= 31) {
+			return true
+		}
+	} else {
+		if (intDates[0] >= 1 && intDates[0] <= 12 && intDates[1] >= 1 && intDates[1] <= 31) {
+			return true
+		}
+	}
+	return false
+}
+
+func isValidTime(time []string) (bool) {
+	intTimes := []int64{}
+	for _, val := range time {
+		intTime, err := strconv.ParseInt(val, 10, 32)
+		intTimes = append(intTimes, intTime)
+		if err != nil {
+			return false
+		}
+	} 
+	if intTimes[0] >= 0 && intTimes[0] <= 23 && intTimes[1] >= 0 && intTimes[1] <= 59 && intTimes[2] >= 0 && intTimes[2] <= 59 {
+		return true
+	}
+	return false
+}
 
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("ENTER QUERY: ")
 	for scanner.Scan() {
 		QueryHandler(scanner.Text())
-		/*fmt.Println(query)
-		client, err := NewClient(&ClientConfig{})
-		if err != nil {
-			fmt.Println("error occured!")
-		}
-		results, err := client.Query(query)
-		if err != nil {
-			fmt.Println("ANOTHER ERROR!")
-		}
-		// fmt.Print("RESULTS: ")
-		for index := range results {
-			points := results[index].GetPoints()
-			if len(points) == 0 {
-				fmt.Println("203")
-			} else if len(points) == 1 {
-				fmt.Println("201")
-			} else if len(points) > 1 {
-				fmt.Println("202")
-			}
-			
-			for _,point := range points {
-				fmt.Println(point)
-			}
-		}
-		*/
 		if err := scanner.Err(); err != nil {
 			log.Fatal(err)
 		}
