@@ -9,12 +9,12 @@ HOST = 'localhost'
 PORT = 8086
 USER = 'root'
 PASSWORD = 'root'
-DBNAME = 'thedb'
+DBNAME = 'mydb'
 
 client = InfluxDBClient(HOST, PORT, USER, PASSWORD, DBNAME)
 
 # Uncomment when needed to make a new database with 'DBNAME'
-# client.create_database(DBNAME)
+client.create_database(DBNAME)
 
 # Will want to change the file name in some cases
 datafile = open(FILE_NAME).readlines()
@@ -36,8 +36,10 @@ for line in nonblank_lines(datafile):
     for ts in data:
         timeseries[ts[2]].append((float(ts[0]), float(ts[3])))
 
-    insert_ts = [{"name": ts_key.replace("%20", " "),
+    insert_ts = [{#"name": ts_key.replace("%20", " "),
                   "columns": ["time", "value"],
+		  "name": ts_key.replace("%20", " "),
                   "points": timeseries[ts_key]} for ts_key in timeseries]
 
+    print insert_ts
     client.write_points(insert_ts)

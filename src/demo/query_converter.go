@@ -117,10 +117,12 @@ func QueryHandler(rgmQuery string) (string) {
 		keywordBuffer := 0	
 		rgmQEnd := ""
 		if starttimeunix >= 0 && starttimefound == true {
+			fmt.Println("Found start time!")
 			rgmQEnd = " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
 			keywordBuffer += 2
 		}
 		if endtimeunix > 0 {
+			fmt.Println("Found end time!")
 			rgmQEnd = rgmQEnd + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
 			keywordBuffer += 2
 		}
@@ -131,7 +133,7 @@ func QueryHandler(rgmQuery string) (string) {
 		rgmQ = rgmQ + "\""
 		for i := 1; i < len(tokenizedQuery) - keywordBuffer; i++ {
 			rgmQ = rgmQ + tokenizedQuery[i]
-			if i - keywordBuffer > -1 {
+			if i < len(tokenizedQuery) - keywordBuffer - 1 {
 				rgmQ = rgmQ + " "
 			}
 		
@@ -139,7 +141,12 @@ func QueryHandler(rgmQuery string) (string) {
 		rgmQ = rgmQ + "\""	
 		rgmQ = rgmQ + rgmQEnd
 		fmt.Printf("Influx Query: %v\n", rgmQ)
-		//results, err := client.Query()
+		results, err := client.Query(rgmQ)
+		if err != nil {
+			fmt.Printf("Results: %v\n", results)
+		} else {
+			fmt.Printf("Error: %v\n", err)
+		}
 		/*	
 		for index := range results {
 			pointIndices := []int{}
