@@ -84,12 +84,15 @@ func QueryHandler(rgmQuery string) (string) {
 	}
 	//starttime := ""
 	//endtime := ""
+	starttimefound := false
 	var starttimeunix int64
 	var endtimeunix int64
 	starttime, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 1], 10, 64)
-	starttimeunix = starttime
+	//starttimeunix = starttime
 	if err != nil && starttimeunix > 1000 {
-		fmt.Println("First Case!")
+		starttimeunix = starttime
+		starttimefound = true
+		//fmt.Println("First Case!")
 		//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 1]
 		time, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 2], 10, 64)
 		if err != nil && time > 1000 {
@@ -101,6 +104,7 @@ func QueryHandler(rgmQuery string) (string) {
 		fmt.Println("Second Case!")
 		starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])
 		starttimeunix = starttime.Unix()
+		starttimefound = true
 		if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3])) == true {
 			endtimeunix = starttimeunix
 			starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) 
@@ -109,28 +113,34 @@ func QueryHandler(rgmQuery string) (string) {
 	}
 	switch tokenizedQuery[0] {
 	case idQuery, idQ:
-		rgmQ := "select * from " + timeSeries 
+		rgmQ := "select * from " 
 		keywordBuffer := 0	
-		if starttimeunix >= 0 {
-			rgmQ = rgmQ + " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
+		rgmQEnd := ""
+		if starttimeunix >= 0 && starttimefound == true {
+			rgmQEnd = " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
 			keywordBuffer += 2
 		}
 		if endtimeunix > 0 {
-			rgmQ = rgmQ + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
+			rgmQEnd = rgmQEnd + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
 			keywordBuffer += 2
 		}
-		fmt.Printf("InfluxQuery: %v\n", rgmQ)
-		results, err := client.Query(rgmQ)
-		//fmt.Printf("Results: %v\n", results)
 		if err != nil {
 			fmt.Println("ANOTHER ERROR!")
 		}
-		
-		keywords := make(map[string]int)
-		for i := 1; i < len(tokenizedQuery) - keywordBuffer; i++ {
-			keywords[tokenizedQuery[i]] = 1
-		}	
 	
+		rgmQ = rgmQ + "\""
+		for i := 1; i < len(tokenizedQuery) - keywordBuffer; i++ {
+			rgmQ = rgmQ + tokenizedQuery[i]
+			if i - keywordBuffer > -1 {
+				rgmQ = rgmQ + " "
+			}
+		
+		}	
+		rgmQ = rgmQ + "\""	
+		rgmQ = rgmQ + rgmQEnd
+		fmt.Printf("Influx Query: %v\n", rgmQ)
+		//results, err := client.Query()
+		/*	
 		for index := range results {
 			pointIndices := []int{}
 			points := results[index].GetPoints()
@@ -177,6 +187,7 @@ func QueryHandler(rgmQuery string) (string) {
 				fmt.Printf("%v\t %v\n", points[pointIndices[count]][2], points[pointIndices[count]])
 			}
 		}
+		*/
 		return rgmQ
 	
 	case keyQuery, keyQ:
