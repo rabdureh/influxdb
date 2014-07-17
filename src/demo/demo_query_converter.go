@@ -9,6 +9,7 @@ import (
 	. "influxdb-go"
 	"regexp"
 	"strconv"
+	//"reflect"
 )
 
 const (
@@ -75,98 +76,119 @@ type RGMCommand struct {
 	replace		string
 }
 
-func QueryHandler(rgmQuery string) ([][]*Series, error) {
-	retResults := [][]*Series{}
+func QueryHandler(rgmQuery string) (string) {
 	tokenizedQuery := strings.Fields(rgmQuery)	
 	client, err := NewClient(&ClientConfig{})
 	if err != nil {
 		fmt.Println("error occured!")
-		return retResults, err
 	}
 	//starttime := ""
 	//endtime := ""
-	//starttimefound := false
-	starttimeunix, endtimeunix, starttimefound := ParseTime(tokenizedQuery, false)
+	var starttimeunix int64
+	var endtimeunix int64
+	starttime, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 1], 10, 64)
+	starttimeunix = starttime
+	if err != nil && starttimeunix > 1000 {
+		fmt.Println("First Case!")
+		//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 1]
+		time, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 2], 10, 64)
+		if err != nil && time > 1000 {
+			endtimeunix = starttimeunix
+			starttimeunix = time
+			//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 2]
+		}
+	} else if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])) { 
+		fmt.Println("Second Case!")
+		starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])
+		starttimeunix = starttime.Unix()
+		if (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3])) == true {
+			endtimeunix = starttimeunix
+			starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) 
+			starttimeunix = starttime.Unix()
+		}
+	}
 	switch tokenizedQuery[0] {
 	case idQuery, idQ:
-		if len(tokenizedQuery) == 1 {
-			result, err := client.Query("select * from /.*/")
-			if err != nil {
-				fmt.Println("Could not complete query!")
-				return [][]*Series{}, err
-			}
-			retResults = append(retResults, result)
-		} else {
-			rgmQ := "select * from " 
-			keywordBuffer := 0	
-			rgmQEnd := ""
+		rgmQ := "select * from " + timeSeries 
+		keywordBuffer := 0	
+		if starttimeunix >= 0 {
+			rgmQ = rgmQ + " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
+			keywordBuffer += 2
+		}
+		if endtimeunix > 0 {
+			rgmQ = rgmQ + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
+			keywordBuffer += 2
+		}
+		fmt.Printf("InfluxQuery: %v\n", rgmQ)
+		results, err := client.Query(rgmQ)
+		//fmt.Printf("Results: %v\n", results)
+		if err != nil {
+			fmt.Println("ANOTHER ERROR!")
+		}
 		
-			if starttimeunix >= 0 && starttimefound == true {
-				fmt.Println("Found start time!")
-				rgmQEnd = " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
-				keywordBuffer += 2
-			}
-			if endtimeunix > 0 {
-				fmt.Println("Found end time!")
-				rgmQEnd = rgmQEnd + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
-				keywordBuffer += 2
-			}
+		keywords := make(map[string]int)
+		for i := 1; i < len(tokenizedQuery) - keywordBuffer; i++ {
+			keywords[tokenizedQuery[i]] = 1
+		}	
 	
-			rgmQ = rgmQ + "\""
-			regexfound := false
-			for i := 1; i < len(tokenizedQuery) - keywordBuffer; i++ {
-				if strings.EqualFold(tokenizedQuery[i], "*") {
-					regexfound = true
+		for index := range results {
+			pointIndices := []int{}
+			points := results[index].GetPoints()
+			for i, point := range points {
+				pointKeywords := make(map[string]int)
+				for key := range keywords {
+					pointKeywords[key] = 1
 				}
-				rgmQ = rgmQ + tokenizedQuery[i]
-				if i < len(tokenizedQuery) - keywordBuffer - 1 {
-					rgmQ = rgmQ + " "
+				pointMatches := []string{}
+				for keyword := range keywords {
+					for _, elem := range point {
+						if str, ok := elem.(string); ok {
+							match, _ := regexp.MatchString(keyword, str)
+							//fmt.Println("Expression: " + keyword)
+							//fmt.Println("String: " + str)
+							if match == true {
+								alreadyUsed := false
+								for _, word := range pointMatches {
+									if strings.EqualFold(word, str) {
+										alreadyUsed = true
+									}
+								}
+								if !alreadyUsed {
+									delete(pointKeywords, keyword)
+									//fmt.Println("MATCH!")
+								}
+							}
+						}
+					}
 				}
-			
+				if len(pointKeywords) == 0 || (len(pointKeywords) == 1 && pointKeywords["*"] == 1) {
+					pointIndices = append(pointIndices, i)
+				}
 			}
-			rgmQ = rgmQ + "\""
-			if regexfound == true {
-				rgmQ = strings.Replace(rgmQ, "\"", "/", 2)
-				fmt.Println("Found a regex!")
+			if len(pointIndices) == 0 {
+				fmt.Print("203")
+			} else if len(pointIndices) == 1 {
+				fmt.Print("201")
+			} else if len(pointIndices) > 1 {
+				fmt.Print("202")
 			}
-			rgmQ = rgmQ + rgmQEnd
-			fmt.Printf("Influx Query: %v\n", rgmQ)
-			result, err := client.Query(rgmQ)
-			retResults = append(retResults, result)
-			if err != nil {
-				fmt.Printf("Error: %v\n", err)
-				return retResults, err
-			}
-			//fmt.Println(retResults)	
-		}
-		for _, seriesArr := range retResults {
-			//fmt.Println(seriesArr)
-			if len(seriesArr) == 1 {
-				fmt.Printf("201, %v match found.\n", len(seriesArr))
-			} else if len(seriesArr) > 1 {
-				fmt.Printf("202, %v matches found.\n", len(seriesArr))
-			} else if len(seriesArr) == 0 {
-				fmt.Printf("200, %v matches found.\n", len(seriesArr))
-			} else {
-				fmt.Printf("Possible error/warning!\n")
-			}
-			for _, series := range seriesArr {
-				//fmt.Println(series.GetName())
-				//fmt.Println(series.GetColumns())
-				fmt.Println(series.GetPoints()[0][2])
-				fmt.Println(series.GetName())
+			fmt.Println(", " + strconv.Itoa(len(pointIndices)) + " matches found.")	
+			for count := 0; count < len(pointIndices); count++ {
+				fmt.Printf("%v\t %v\n", points[pointIndices[count]][2], points[pointIndices[count]])
 			}
 		}
-		return retResults, nil
+		return rgmQ
 	
 	case keyQuery, keyQ:
+		var results [][]*Series
+		rgmQ := ""
 		if strings.EqualFold(tokenizedQuery[1], "*") {
 			rgmQ := "select * from " + timeSeries
 			//fmt.Println(results)
 			results, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid query!")
-				return retResults, err
+				return rgmQ
 			}
 			//fmt.Println("Found a placeholder!")
 			fmt.Println(results)
@@ -176,34 +198,61 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 				result, err := client.Query(rgmQ)
 				if err != nil {
 					fmt.Println("Invalid Query!")
-					return retResults, err
+					return rgmQ
 				}
-				retResults = append(retResults, result)
+				results = append(results, result)
 			}
 		}
 		if err != nil {
 			fmt.Println("Another err!")
 		}
-		return retResults, nil
+		
+		for _, result := range results {
+			//points := results[index].GetPoints()
+			//fmt.Println("Looping")	
+			//fmt.Println(reflect.TypeOf(results[index]))
+			for _, elem := range result {
+				points := elem.GetPoints()	
+				if len(points) == 0 {
+					fmt.Print("203")
+				} else if len(points) == 1 {
+					fmt.Print("201")
+				} else if len(points) > 1 {
+					fmt.Print("202")
+				}
+				fmt.Println(", " + strconv.Itoa(len(points)) + " matches found.")
+				for _,point := range points {
+					fmt.Printf("%v\t %v\n", point[2], point)
+				}
+			}
+		}
+		return rgmQ
 	case tsQuery, tsQ:
-		return retResults, nil
+		rgmQ := ""
+		return rgmQ
 	case curQuery, curQ:
-		return retResults, nil
+		rgmQ := ""
+		return rgmQ
 	case folQuery:
-		return retResults, nil
+		rgmQ := ""
+		return rgmQ
 	case scQuery, scQ:
-		return retResults, nil
+		rgmQ := ""
+		return rgmQ
 	case stQuery, stQ:
-		return retResults, nil
+		rgmQ := ""
+		return rgmQ
 	case unsubQuery, unsubQ:
-		return retResults, nil
+		rgmQ := ""
+		return rgmQ
 	case qsubQuery, qsubQ:
-		return retResults, nil
+		rgmQ := ""
+		return rgmQ
 	default:
 		log.Fatal("%s is an unrecognized query type - see documentation for allowed query types", rgmQuery)
 	} 
 	
-	return retResults, nil
+	return rgmQuery
 }
 
 func isDateTime(datetime string) (bool) { 
@@ -311,53 +360,15 @@ func getDateFromString (datestring string) (time.Time, error) {
 	//return time.Now() 
 }
 
-func ParseTime(tokenizedQuery []string, starttimefound bool) (int64, int64, bool) {
-	var starttimeunix int64
-	var endtimeunix int64
-	starttime, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 1], 10, 64)
-	//starttimeunix = starttime
-	if err != nil && starttimeunix > 1000 && len(tokenizedQuery) >= 2 {
-		starttimeunix = starttime
-		starttimefound = true
-		//fmt.Println("First Case!")
-		//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 1]
-		time, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 2], 10, 64)
-		if err != nil && time > 1000 {
-			endtimeunix = starttimeunix
-			starttimeunix = time
-			//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 2]
-		}
-	} else if (len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])) { 
-		fmt.Println("Second Case!")
-		starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1])
-		starttimeunix = starttime.Unix()
-		starttimefound = true
-		if len(tokenizedQuery) > 4 && (isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) == true) {
-			endtimeunix = starttimeunix
-			starttime, _ := getDateFromString(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) 
-			starttimeunix = starttime.Unix()
-		}
-	}
-	return starttimeunix, endtimeunix, starttimefound
-}
-
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("ENTER QUERY: ")
 	for scanner.Scan() {
-		_, err := QueryHandler(scanner.Text())
-		if err != nil {
+		QueryHandler(scanner.Text())
+		if err := scanner.Err(); err != nil {
 			log.Fatal(err)
 		}
-		/*
-		for _, seriesArr := range result {
-			for _, series := range seriesArr {
-				fmt.Println(series.GetName())
-				fmt.Println(series.GetColumns())
-				//fmt.Println(series.GetPoints())
-			}
-		}
-		*/
+		
 		fmt.Print("ENTER QUERY: ")
 	}
 }

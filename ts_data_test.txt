@@ -1,0 +1,2 @@
+1400126761.194941 [type=timeseries::TimeSeriesValues numeric_values=@[[type=timeseries::TimeSeriesNumericValue tm=1400126761.19427 id=0 keywords=location:x%20pool:y%20type:total value=.2981971733712072]] string_values=@[]] 
+1400126761.194941 [type=timeseries::TimeSeriesValues numeric_values=@[[type=timeseries::TimeSeriesNumericValue tm=1500126761.19427 id=0 keywords=location:x%20pool:y%20type:total value=.3981971733712072]] string_values=@[]]

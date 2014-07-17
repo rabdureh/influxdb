@@ -14,7 +14,7 @@ import (
 	"wal"
 
 	log "code.google.com/p/log4go"
-	influxdb "github.com/influxdb/influxdb-go"
+	influxdb "demo/influxdb-go"
 )
 
 type Server struct {
