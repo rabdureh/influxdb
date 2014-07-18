@@ -161,13 +161,13 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 	
 	case keyQuery, keyQ:
 		if strings.EqualFold(tokenizedQuery[1], "*") {
-			rgmQ := "select * from /*./"
+			rgmQ := "select * from /.*/"
 			results, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid query!")
 				return retResults, err
 			}
-			//fmt.Println(results)
+			retResults = append(retResults, results)
 		} else {
 			for counter := 1; counter < len(tokenizedQuery); counter++ {
 				rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter]
@@ -207,19 +207,21 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 		}
 		return retResults, nil
 	case tsQuery, tsQ:
+		rgmQEnd := ""
+		buffer := 0
 		if starttimeunix >= 0 && starttimefound == true {
-			fmt.Println("Found start time!")
 			rgmQEnd = " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
-			keywordBuffer += 2
+			buffer += 2
+		} else {
+			fmt.Println("No start-time provided. Query-Timeseries requires at least a startime.")
+			return [][]*Series{}, nil 
 		}
 		if endtimeunix > 0 {
-			fmt.Println("Found end time!")
 			rgmQEnd = rgmQEnd + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
-			keywordBuffer += 2
-		}
-		for counter := 1; counter < len(tokenizedQuery) - keywordBuffer; counter++ {
+			buffer += 2
+		} 
+		for counter := 1; counter < len(tokenizedQuery) - buffer; counter++ {
 			rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter]
-			fmt.Printf("RGMQ: %v\n", rgmQ)	
 			result, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid Query!")
@@ -242,10 +244,7 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 		}
 		for _, seriesArr := range retResults {
 			for _, series := range seriesArr {
-				//fmt.Println(series.GetName())
-				//fmt.Println(series.GetColumns())
-				fmt.Printf("%v ", series.GetPoints()[0][2])
-				fmt.Println(series.GetName())
+				fmt.Printf("%v\t %v\t %v\n", series.GetPoints()[0][2], series.GetPoints()[0][0], series.GetPoints()[0][3])
 			}
 		}
 		return retResults, nil
