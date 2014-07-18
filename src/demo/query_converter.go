@@ -9,6 +9,7 @@ import (
 	. "influxdb-go"
 	"regexp"
 	"strconv"
+	//"reflect"
 )
 
 const (
@@ -30,7 +31,6 @@ const (
 	unsubQuery = "Unsubscribe"
 	qsubQ = "QS"
 	qsubQuery = "Query-Sub"
-	timeSeries = "ts_data.txt"
 	year = "[0-9]{4,4}"
 	month = "[0-9]{2,2}"
 	day = "[0-9]{2,2}"
@@ -83,9 +83,6 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 		fmt.Println("error occured!")
 		return retResults, err
 	}
-	//starttime := ""
-	//endtime := ""
-	//starttimefound := false
 	starttimeunix, endtimeunix, starttimefound := ParseTime(tokenizedQuery, false)
 	switch tokenizedQuery[0] {
 	case idQuery, idQ:
@@ -117,8 +114,10 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 			for i := 1; i < len(tokenizedQuery) - keywordBuffer; i++ {
 				if strings.EqualFold(tokenizedQuery[i], "*") {
 					regexfound = true
-				}
+					//rgmQ = rgmQ + "."
+				} else {
 				rgmQ = rgmQ + tokenizedQuery[i]
+				}
 				if i < len(tokenizedQuery) - keywordBuffer - 1 {
 					rgmQ = rgmQ + " "
 				}
@@ -127,7 +126,9 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 			rgmQ = rgmQ + "\""
 			if regexfound == true {
 				rgmQ = strings.Replace(rgmQ, "\"", "/", 2)
-				fmt.Println("Found a regex!")
+				rgmQ = strings.Replace(rgmQ, "/ ", "/", 1)	
+				rgmQ = strings.Replace(rgmQ, " /", "/", -1)
+				rgmQ = strings.Replace(rgmQ, "/", " /", 1)
 			}
 			rgmQ = rgmQ + rgmQEnd
 			fmt.Printf("Influx Query: %v\n", rgmQ)
@@ -140,7 +141,6 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 			//fmt.Println(retResults)	
 		}
 		for _, seriesArr := range retResults {
-			//fmt.Println(seriesArr)
 			if len(seriesArr) == 1 {
 				fmt.Printf("201, %v match found.\n", len(seriesArr))
 			} else if len(seriesArr) > 1 {
@@ -161,18 +161,17 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 	
 	case keyQuery, keyQ:
 		if strings.EqualFold(tokenizedQuery[1], "*") {
-			rgmQ := "select * from " + timeSeries
-			//fmt.Println(results)
+			rgmQ := "select * from /*./"
 			results, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid query!")
 				return retResults, err
 			}
-			//fmt.Println("Found a placeholder!")
-			fmt.Println(results)
+			//fmt.Println(results)
 		} else {
 			for counter := 1; counter < len(tokenizedQuery); counter++ {
-				rgmQ := "select * from " + timeSeries + " where num_vals_id = " + tokenizedQuery[counter]
+				rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter]
+				fmt.Printf("RGMQ: %v\n", rgmQ)	
 				result, err := client.Query(rgmQ)
 				if err != nil {
 					fmt.Println("Invalid Query!")
@@ -184,8 +183,71 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 		if err != nil {
 			fmt.Println("Another err!")
 		}
+			
+		numResults := 0
+		for _, seriesArr := range retResults {
+			numResults += len(seriesArr)
+		}
+		if numResults == 1 {
+			fmt.Printf("201, %v match found.\n", numResults)
+		} else if numResults > 1 {
+			fmt.Printf("202, %v matches found.\n", numResults)
+		} else if numResults == 0 {
+			fmt.Printf("200, %v matches found.\n", numResults)
+		} else {
+			fmt.Printf("Possible error/warning!\n")
+		}
+		for _, seriesArr := range retResults {
+			for _, series := range seriesArr {
+				//fmt.Println(series.GetName())
+				//fmt.Println(series.GetColumns())
+				fmt.Printf("%v ", series.GetPoints()[0][2])
+				fmt.Println(series.GetName())
+			}
+		}
 		return retResults, nil
 	case tsQuery, tsQ:
+		if starttimeunix >= 0 && starttimefound == true {
+			fmt.Println("Found start time!")
+			rgmQEnd = " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
+			keywordBuffer += 2
+		}
+		if endtimeunix > 0 {
+			fmt.Println("Found end time!")
+			rgmQEnd = rgmQEnd + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
+			keywordBuffer += 2
+		}
+		for counter := 1; counter < len(tokenizedQuery) - keywordBuffer; counter++ {
+			rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter]
+			fmt.Printf("RGMQ: %v\n", rgmQ)	
+			result, err := client.Query(rgmQ)
+			if err != nil {
+				fmt.Println("Invalid Query!")
+				return retResults, err
+			}
+			retResults = append(retResults, result)
+		}
+		numResults := 0
+		for _, seriesArr := range retResults {
+			numResults += len(seriesArr)
+		}
+		if numResults == 1 {
+			fmt.Printf("201, %v match found.\n", numResults)
+		} else if numResults > 1 {
+			fmt.Printf("202, %v matches found.\n", numResults)
+		} else if numResults == 0 {
+			fmt.Printf("200, %v matches found.\n", numResults)
+		} else {
+			fmt.Printf("Possible error/warning!\n")
+		}
+		for _, seriesArr := range retResults {
+			for _, series := range seriesArr {
+				//fmt.Println(series.GetName())
+				//fmt.Println(series.GetColumns())
+				fmt.Printf("%v ", series.GetPoints()[0][2])
+				fmt.Println(series.GetName())
+			}
+		}
 		return retResults, nil
 	case curQuery, curQ:
 		return retResults, nil
