@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 
-	influxdb "github.com/influxdb/influxdb-go"
-	. "launchpad.net/gocheck"
+	influxdb "../../demo/influxdb-go"
+	. "gopkg.in/check.v1"
 )
 
 type DataTestClient struct {

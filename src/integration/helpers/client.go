@@ -1,9 +1,10 @@
 package helpers
 
 import (
-	influxdb "github.com/influxdb/influxdb-go"
-	. "launchpad.net/gocheck"
+	influxdb "../../demo/influxdb-go" //"github.com/influxdb/influxdb-go"
+	. "gopkg.in/check.v1"
 )
+
 
 type Client interface {
 	RunQuery(query string, c *C, timePrecision ...influxdb.TimePrecision) []*influxdb.Series

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	//"reflect"
+	//"../api/http"
+	//"../protocol"
 )
 
 const (
@@ -249,6 +251,60 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 		}
 		return retResults, nil
 	case curQuery, curQ:
+		rgmQEnd := ""
+		buffer := 0
+		if starttimeunix >= 0 && starttimefound == true {
+			rgmQEnd = " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
+			buffer += 2
+		} else {
+			fmt.Println("No start-time provided. Query-Timeseries requires at least a startime.")
+			return [][]*Series{}, nil 
+		}
+		if endtimeunix > 0 {
+			rgmQEnd = rgmQEnd + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
+			buffer += 2
+		} 
+		for counter := 1; counter < len(tokenizedQuery) - buffer; counter++ {
+			rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter]
+			result, err := client.Query(rgmQ)
+			if err != nil {
+				fmt.Println("Invalid Query!")
+				return retResults, err
+			}
+			retResults = append(retResults, result)
+		}
+		numResults := 0
+		for _, seriesArr := range retResults {
+			numResults += len(seriesArr)
+		}
+		var maxtime float64
+		maxtime = 0
+		//var maxpoint *Point
+		var maxPointIndex int
+		var maxSeriesIndex int
+		var maxResultIndex int
+		for resultIndex, seriesArr := range retResults {
+			for serIndex, series := range seriesArr {
+				for i := range series.GetPoints() {
+					pointTime := series.GetPoints()[i][0]
+					if pointTime.(float64) > maxtime {
+						maxPointIndex = i
+						maxSeriesIndex = serIndex
+						maxResultIndex = resultIndex
+						maxtime = pointTime.(float64)
+					}
+				}
+			}
+		}
+		if numResults >= 1 {
+			fmt.Printf("201, 1 match found.\n")
+		} else if numResults == 0 {
+			fmt.Printf("200, %v matches found.\n", numResults)
+		} else {
+			fmt.Printf("Possible error/warning!\n")
+		}
+		maxPoint := retResults[maxResultIndex][maxSeriesIndex].GetPoints()[maxPointIndex]
+		fmt.Printf("%v\t %v\t %v\n", maxPoint[2], maxPoint[0], maxPoint[3])
 		return retResults, nil
 	case folQuery:
 		return retResults, nil

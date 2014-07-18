@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	influxdb "github.com/influxdb/influxdb-go"
-	. "launchpad.net/gocheck"
+	influxdb "../../demo/influxdb-go"
+	. "gopkg.in/check.v1"
 )
 
 type Server struct {
