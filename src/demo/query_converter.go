@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	//"reflect"
-	//"../api/http"
+	//"../integration/helpers"
 	//"../protocol"
 )
 
@@ -253,19 +253,12 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 	case curQuery, curQ:
 		rgmQEnd := ""
 		buffer := 0
-		if starttimeunix >= 0 && starttimefound == true {
-			rgmQEnd = " where num_vals_tm > " + strconv.FormatInt(starttimeunix, 10)
-			buffer += 2
-		} else {
-			fmt.Println("No start-time provided. Query-Timeseries requires at least a startime.")
-			return [][]*Series{}, nil 
-		}
 		if endtimeunix > 0 {
 			rgmQEnd = rgmQEnd + " and num_vals_tm < " + strconv.FormatInt(endtimeunix, 10)
 			buffer += 2
 		} 
 		for counter := 1; counter < len(tokenizedQuery) - buffer; counter++ {
-			rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter]
+			rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter] + rgmQEnd
 			result, err := client.Query(rgmQ)
 			if err != nil {
 				fmt.Println("Invalid Query!")
@@ -279,13 +272,13 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 		}
 		var maxtime float64
 		maxtime = 0
-		//var maxpoint *Point
+		//maxpoint := protocol.Point{} 
 		var maxPointIndex int
 		var maxSeriesIndex int
 		var maxResultIndex int
 		for resultIndex, seriesArr := range retResults {
 			for serIndex, series := range seriesArr {
-				for i := range series.GetPoints() {
+				for i, _ := range series.GetPoints() {
 					pointTime := series.GetPoints()[i][0]
 					if pointTime.(float64) > maxtime {
 						maxPointIndex = i
@@ -307,6 +300,53 @@ func QueryHandler(rgmQuery string) ([][]*Series, error) {
 		fmt.Printf("%v\t %v\t %v\n", maxPoint[2], maxPoint[0], maxPoint[3])
 		return retResults, nil
 	case folQuery:
+		rgmQEnd := ""
+		buffer := 0
+		if starttimeunix >= 0 && starttimefound == true {
+			rgmQEnd = " and time > " + strconv.FormatInt(starttimeunix, 10)
+			buffer += 2
+		} 
+		if endtimeunix > 0 {
+			rgmQEnd = " and time < " + strconv.FormatInt(endtimeunix, 10)
+		} 
+		if starttimefound != true {
+			fmt.Println("No start-time provided. Query-Timeseries requires at least a startime.")
+			return [][]*Series{}, nil 
+		}
+		for counter := 1; counter < len(tokenizedQuery) - buffer; counter++ {
+			rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter] + rgmQEnd
+			fmt.Printf("RGMQ: %v\n", rgmQ)
+			result, err := client.Query(rgmQ)
+			if err != nil {
+				fmt.Println("Invalid Query!")
+				return retResults, err
+			}
+			retResults = append(retResults, result)
+		}
+		numResults := 0
+		for _, seriesArr := range retResults {
+			numResults += len(seriesArr)
+		}
+		if numResults == 1 {
+			fmt.Printf("201, %v match found.\n", numResults)
+		} else if numResults > 1 {
+			fmt.Printf("202, %v matches found.\n", numResults)
+		} else if numResults == 0 {
+			fmt.Printf("200, %v matches found.\n", numResults)
+		} else {
+			fmt.Printf("Possible error/warning!\n")
+		}
+		for _, seriesArr := range retResults {
+			for _, series := range seriesArr {
+				fmt.Printf("Point: %v\n", series.GetPoints())
+				fmt.Printf("%v\t %v\t %v\n", series.GetPoints()[0][2], series.GetPoints()[0][0], series.GetPoints()[0][3])
+			}
+		}
+		
+
+
+
+
 		return retResults, nil
 	case scQuery, scQ:
 		return retResults, nil

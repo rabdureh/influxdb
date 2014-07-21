@@ -1,0 +1,56 @@
+rgmQEnd := ""
+306                 buffer := 0
+307                 if starttimeunix > 0 && starttimefound {
+308                         rgmQEnd = " and time > " + strconv.FormatInt(starttimeunix, 10)
+309                         buffer += 2
+310                 } else {
+311                         fmt.Println("No start-time provided! Query-Follow requires a start-time!")
+312                         return retResults, nil
+313                 }
+314 
+315                 for counter := 1; counter < len(tokenizedQuery) - buffer; counter++ {
+316                         rgmQ := "select * from /.*/ where id = " + tokenizedQuery[counter] + rgmQEnd
+317                         result, err := client.Query(rgmQ)
+318                         if err != nil {
+319                                 fmt.Println("Invalid Query!")
+320                                 return retResults, err
+321                         }
+322                         retResults = append(retResults, result)
+323                 }
+324                 numResults := 0
+325                 for _, seriesArr := range retResults {
+326                         numResults += len(seriesArr)
+327                 }
+328 
+329                 //var mostRecentResults []*Series
+330                 for _, seriesArr := range retResults {
+331                         for _, series := range seriesArr {
+332                                 for i := range series.GetPoints() {
+333                                         var compareTime float64
+334                                         pointFromQuery := series
+335                                         //fmt.Printf("PQuery: %v\n", series)
+336                                         //fmt.Printf("Len: %v\n", len(mostRecentResults))
+337                                         //fmt.Printf("Most Recent: %v\n", mostRecentResults)
+338                                         if len(mostRecentResults) > 0 {
+339                                                 for _, recentResult := range mostRecentResults {
+340                                                         fmt.Printf("recentResult: %v\n", recentResult)
+341                                                         if series.GetPoints()[i][2] == recentResult.GetPoints()[0][0] {
+342                                                                 //pointToCompare = recentResult
+343                                                                 //fmt.Printf("Type of time: %v\n", recentResult.GetPoints()[0][0])
+344                                                                 compareTime = recentResult.GetPoints()[0][0].(float64)
+345                                                         }
+346                                                 }
+347                                         }
+348                                         //fmt.Printf("Time: %v\n", pointFromQuery.GetPoints()[0][0])
+349                                         if len(mostRecentResults) == 0 {
+350                                                 mostRecentResults = append(mostRecentResults, series)
+351                                         } else if pointFromQuery.GetPoints()[0][0].(float64) > compareTime {
+352                                                 newRecentResults := []*Series{}
+353                                                 for _, recentResult := range mostRecentResults {
+354                                                         if series.GetPoints()[i][2] != recentResult.GetPoints()[0][2] {
+355                                                                 newRecentResults = append(newRecentResults, recentResult)
+356                                                         }
+357                                                 }
+358                                                 mostRecentResults = newRecentResults
+359                                         }
+360                                 }
