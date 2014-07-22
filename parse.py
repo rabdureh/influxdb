@@ -43,4 +43,4 @@ for line in nonblank_lines(datafile):
                   "columns": ["time", "value", "id"],
                   "points": timeseries[ts_key]} for ts_key in timeseries]
     print insert_ts
-    client.write_points(insert_ts)
+    client.write_points_with_precision(insert_ts, 'm')
