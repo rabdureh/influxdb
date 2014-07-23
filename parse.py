@@ -33,14 +33,11 @@ timeseries = defaultdict(list)
 for line in nonblank_lines(datafile):
     timeseries.clear()
     data = ts_regex.findall(line.strip())
-    #print data
     for ts in data:
-        timeseries[ts[2]].append((float(ts[0]), float(ts[3]), int(ts[1])))
-	#timeseries[ts[1]] 
-	#print timeseries
-    #print timeseries
+        #tm = ts[0].replace(".", "")
+	timeseries[ts[2]].append((float(ts[0]), float(ts[3])))
     insert_ts = [{"name": ts_key.replace("%20", " "),
-                  "columns": ["time", "value", "id"],
+                  "columns": ["time", "value"],
                   "points": timeseries[ts_key]} for ts_key in timeseries]
     print insert_ts
-    client.write_points_with_precision(insert_ts, 'm')
+    client.write_points(insert_ts)
