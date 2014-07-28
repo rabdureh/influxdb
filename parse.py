@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from influxdb import InfluxDBClient
 
-FILE_NAME = 'ts_data.txt'
+FILE_NAME = 'data/ts_relay_bereq102_20140501_bereq101_3_12500.ipc.l.gz'
 
 HOST = 'localhost'
 PORT = 8086
@@ -38,5 +38,4 @@ for line in nonblank_lines(datafile):
     insert_ts = [{"name": ts_key.replace("%20", " "),
                   "columns": ["time", "value"],
                   "points": timeseries[ts_key]} for ts_key in timeseries]
-    print insert_ts
     client.write_points_with_precision(insert_ts, "u")
