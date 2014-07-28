@@ -101,15 +101,12 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 			keywordBuffer := 0	
 			rgmQEnd := ""
 			starttime := ""
-			if isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
-				//fmt.Println("Found start time!")
+			if len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
 				starttime = tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]
 				rgmQEnd = " where time > '" + starttime + "'" 
-				
 				keywordBuffer += 2
 			}
-			if isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) {
-				//fmt.Println("Found end time!")
+			if len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) {
 				endtime := starttime
 				starttime = tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]
 				rgmQEnd = " where time > '" + starttime + "' and time < '" + endtime + "'"
@@ -142,7 +139,6 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 				}
 			}
 			rgmQ = rgmQ + rgmQEnd
-			fmt.Printf("Influx Query: %v\n", rgmQ)
 			result, err := client.Query(rgmQ)
 			for _, series := range result {
 				retResults = append(retResults, series)
@@ -151,7 +147,6 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 				fmt.Printf("Error: %v\n", err)
 				return retResults, err
 			}
-			//fmt.Println(retResults)	
 		}
 		if len(retResults) == 1 {
 			fmt.Printf("201, %v match found.\n", len(retResults))
@@ -163,8 +158,6 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 			fmt.Printf("Possible error/warning!\n")
 		}
 		for _, series := range retResults {
-			//fmt.Println(series.GetName())
-			//fmt.Println(series.GetColumns())
 			for _, pts := range series.GetPoints() {
 				fmt.Printf("%v\t %v\n", series.GetName(), pts[2])
 			}
@@ -174,7 +167,7 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 		rgmQEnd := ""
 		buffer := 0
 		starttime := ""
-		if isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
+		if len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
 			starttime = tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]
 			rgmQEnd = " where time > '" + starttime + "'"
 			buffer += 2
@@ -182,7 +175,7 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 			fmt.Println("No start-time provided. Query-Timeseries requires at least a startime.")
 			return []*Series{}, nil 
 		}
-		if isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) {
+		if len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) {
 			rgmQEnd = " where time > '" + starttime + "' and time < '" + tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3] + "'"
 			buffer += 2
 		} 
@@ -228,14 +221,14 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 		}
 		for _, series := range retResults {
 			for _, point := range series.GetPoints() {
-				fmt.Printf("%v\t %v\t %v\n", series.GetName(), point[0], point[1])
+				fmt.Printf("%v\t %v\t %v\n", series.GetName(), point[0], point[2])
 			}
 		}
 		return retResults, nil
 	case curQuery, curQ:
 		rgmQEnd := ""
 		buffer := 0
-		if isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
+		if len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
 			rgmQEnd = rgmQEnd + " where time < '" + tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1] + "'"
 			buffer += 2
 		} 
@@ -280,7 +273,7 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 		}
 		for _, series := range retResults {
 			for _, maxPoint := range series.GetPoints() {
-				fmt.Printf("%v\t %v\t %v\t\n", series.GetName(), maxPoint[0], maxPoint[1])
+				fmt.Printf("%v\t %v\t %v\t\n", series.GetName(), maxPoint[0], maxPoint[2])
 			}
 		}
 		return retResults, nil
@@ -290,14 +283,14 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 		buffer := 0
 		endtime := ""
 		starttime := ""
-		if isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
+		if len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]) {
 			starttime = tokenizedQuery[len(tokenizedQuery) - 2] + " " + tokenizedQuery[len(tokenizedQuery) - 1]
 			buffer += 2
 		} else {
 			fmt.Println("Must provide a start-time for Follow-Query!")
 			return []*Series{}, nil
 		}
-		if isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) {
+		if len(tokenizedQuery) > 2 && isDateTime(tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]) {
 			endtime = starttime
 			starttime = tokenizedQuery[len(tokenizedQuery) - 4] + " " + tokenizedQuery[len(tokenizedQuery) - 3]
 			rgmQend = " and time < '" + endtime + "'"
@@ -364,9 +357,6 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 			endt = time.Date(enddateint[0], time.Month(enddateint[1]), enddateint[2], endtimeint[0], endtimeint[1], endtimeint[2], 0, time.UTC)
 		}
 		
-		fmt.Printf("Endtime: %v\n", endt) 
-		fmt.Printf("Curtime: %v\n", time.Now())
-			
 		for (time.Now().Before(endt) || (endtime == "")) {
 			starttimearray := strings.Split(time.Now().String(), " ")
 			rgmQstart = " where time > '" + starttimearray[0] + " " + starttimearray[1] + "'"
@@ -382,7 +372,6 @@ func QueryHandler(rgmQuery string) ([]*Series, error) {
 				}
 			}
 			newResults = []*Series{}
-			//fmt.Printf("New After: %v\n", newResults)
 		}
 		
 		return retResults, nil
@@ -409,14 +398,12 @@ func isDateTime(datetime string) (bool) {
 	match, _ := regexp.MatchString(ymdhmsz, datetime) 
 	if match == true {
 		if isValidDate(ymd, true) && isValidTime(hms) {
-			//fmt.Println("FOUND YMDHMSZ!!")
 			return true
 		}
 	} else {
 		match, _ := regexp.MatchString(mdyhmsz, datetime)
 		if match == true {
 			if isValidDate(ymd, false) && isValidTime(hms) {
-				//fmt.Println("FOUND MDYHMSZ!!")
 				return true
         		}
 		}
@@ -434,7 +421,6 @@ func isValidDate(date []string, isymd bool) (bool) {
 		if err != nil {
 			return false
 		}
-		//fmt.Println(reflect.TypeOf(val))
 	}
 	if (isymd) {
 		if (intDates[1] >= 1 && intDates[1] <= 12 && intDates[2] >= 1 && intDates[2] <= 31) {
@@ -502,7 +488,6 @@ func ParseTime(tokenizedQuery []string, starttimefound bool) (int64, int64, bool
 	if err != nil && starttimeunix > 1000 && len(tokenizedQuery) >= 2 {
 		starttimeunix = starttime
 		starttimefound = true
-		//fmt.Println("First Case!")
 		//starttimeunix = tokenizedQuery[len(tokenizedQuery) - 1]
 		time, err := strconv.ParseInt(tokenizedQuery[len(tokenizedQuery) - 2], 10, 64)
 		if err != nil && time > 1000 {
@@ -520,8 +505,6 @@ func ParseTime(tokenizedQuery []string, starttimefound bool) (int64, int64, bool
 			starttimeunix = starttime.Unix()
 		}
 	}
-	fmt.Printf("EndtimeUnix: %v\n", endtimeunix)
-	fmt.Printf("StatimeUnix: %v\n", starttimeunix)
 	return starttimeunix, endtimeunix, starttimefound
 }
 */
@@ -535,15 +518,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		/*
-		for _, seriesArr := range result {
-			for _, series := range seriesArr {
-				fmt.Println(series.GetName())
-				fmt.Println(series.GetColumns())
-				//fmt.Println(series.GetPoints())
-			}
-		}
-		*/
 		fmt.Print("ENTER QUERY: ")
 	}
 }

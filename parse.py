@@ -34,7 +34,6 @@ for line in nonblank_lines(datafile):
     timeseries.clear()
     data = ts_regex.findall(line.strip())
     for ts in data:
-        #tm = ts[0].replace(".", "")
 	timeseries[ts[2]].append((int(float(ts[0]) * 1e6), float(ts[3])))
     insert_ts = [{"name": ts_key.replace("%20", " "),
                   "columns": ["time", "value"],
