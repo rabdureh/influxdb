@@ -155,6 +155,14 @@ func (self *HttpServer) Serve(listener net.Listener) {
 	// return whether the cluster is in sync or not
 	self.registerEndpoint(p, "get", "/sync", self.isInSync)
 
+    // subscriptions
+    self.registerEndpoint(p, "get", "/db/:db/subscriptions", self.listSubscriptions)
+    self.registerEndpoint(p, "post", "/db/:db/subscriptions", self.subscribeTimeSeries)
+    self.registerEndpoint(p, "post", "/db/:db/query_subscriptions", self.querySubscription)
+    self.registerEndpoint(p, "post", "/db/:db/subscriptions", self.deleteSubscriptions)
+    //self.registerEndpoint(p, "post", "/db/:db/query_follow", self.queryFollow)
+    //self.registerEndpoint(p, "post", "/db/:db/subscriptions", self.deleteSubscriptions)
+
 	if listener == nil {
 		self.startSsl(p)
 		return
@@ -1122,4 +1130,140 @@ func (self *HttpServer) convertShardsToMap(shards []*cluster.ShardData) []interf
 		result = append(result, s)
 	}
 	return result
+}
+
+type SubscriptionDetail struct {
+    Db          string `json:"db"`
+    UserName    string `json:"userName"`
+    Id          int    `json:"id"`
+    StartTime   int64  `json:"startTm"`
+    EndTime     int64  `json:"endTm"`
+}
+
+func (self *HttpServer) listSubscriptions(w libhttp.ResponseWriter, r *libhttp.Request) {
+    db := r.URL.Query().Get(":db")
+
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        subscriptionlist, err := self.userManager.ListSubscriptions(u, db)
+        if err != nil {
+            return errorToStatusCode(err), err.Error()
+        }
+
+        /*
+        subscriptions := make([]*SubscriptionDetail, 0, len(subscriptionlist))
+        for _, subscription := range subscriptions {
+                subscriptions = append(subscriptions, &SubscriptionDetail{db, u.Name, subscription.GetId(), subscription.GetStartTm(), subscription.GetEndTm()})
+        }
+        */
+        return libhttp.StatusAccepted, subscriptionlist
+    })
+}
+
+// Right now only supports for Unix time, switch for RFC3339
+type newSubscriptionInfo struct {
+    Ids         []int `json:"ids"`
+    Duration    int   `json:"duration"`
+    StartTm     int64 `json:"startTm"`
+    EndTm       int64 `json:"endTm"`
+}
+
+func (self *HttpServer) subscribeTimeSeries(w libhttp.ResponseWriter, r *libhttp.Request) {
+    db := r.URL.Query().Get(":db")
+    username, _, err := getUsernameAndPassword(r)
+    if err != nil {
+        w.WriteHeader(libhttp.StatusBadRequest)
+        w.Write([]byte(err.Error()))
+        return
+    }
+
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        newSubscription := newSubscriptionInfo{}
+        body, err := ioutil.ReadAll(r.Body)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+
+        err = json.Unmarshal(body, &newSubscription)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+
+        // should come up with a better error for this
+        if newSubscription.Duration == 0 {
+            return libhttp.StatusBadRequest, nil
+        }
+
+        if err := self.userManager.SubscribeTimeSeries(db, username, newSubscription.Ids, newSubscription.Duration, newSubscription.StartTm, newSubscription.EndTm, false); err != nil {
+            log.Error("Cannot create subscription: %s", err)
+            return errorToStatusCode(err), err.Error()
+        }
+        log.Debug("Created subscription %s", newSubscription)
+
+        return libhttp.StatusAccepted, nil
+    })
+}
+
+type delSubscriptionInfo struct {
+    DelIds  []int `json:"DelIds"`
+}
+
+func (self *HttpServer) deleteSubscriptions(w libhttp.ResponseWriter, r *libhttp.Request) {
+    db := r.URL.Query().Get(":db")
+    username, _, err := getUsernameAndPassword(r)
+    if err != nil {
+        w.WriteHeader(libhttp.StatusBadRequest)
+        w.Write([]byte(err.Error()))
+        return
+    }
+
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        delSubscription := delSubscriptionInfo{}
+        body, err := ioutil.ReadAll(r.Body)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+
+        err = json.Unmarshal(body, &delSubscription)
+        if err != nil {
+            return libhttp.StatusInternalServerError, err.Error()
+        }
+
+        if err := self.userManager.DeleteSubscriptions(db, username, delSubscription.DelIds); err != nil {
+            return errorToStatusCode(err), err.Error()
+        }
+        return libhttp.StatusOK, nil
+    })
+}
+
+// Can bring back if want to allow for end time usage
+/*
+type querySub struct {
+    
+}
+*/
+
+// My understanding is that when they give us an end time we want to just query until that time
+// And then we update the subscription latest time to that end time
+func (self *HttpServer) querySubscription(w libhttp.ResponseWriter, r *libhttp.Request) {
+    //db := r.URL.Query().Get(":db")
+
+    // For now we're going to assume that u can't give an end time for Q
+    self.tryAsClusterAdmin(w, r, func(u User) (int, interface{}) {
+        /*
+        subscriptionlist, err := self.userManager.ListSubscriptions(u, db)
+        if err != nil {
+            return errorToStatusCode(err), err.Error()
+        }
+
+        if err := self.userManager.ChangeSubscription(db, newSubscription.Id, newSubscription.StartTm, newSubscription.EndTm); err != nil {
+            log.Error("Cannot create subscription: %s", err)
+            return errorToStatusCode(err), err.Error()
+        }
+        log.Debug("Created subscription %s", newSubscription)
+        */
+
+        //if err := self.userManager.kk
+
+        return libhttp.StatusAccepted, nil
+    })
 }

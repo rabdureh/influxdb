@@ -108,6 +108,44 @@ func (self *ClusterAdmin) GetReadPermission() string {
 	return ".*"
 }
 
+type Subscription struct {
+    Db          string  `json:"db"`
+    User        string  `json:"user"`
+    Ids         []int   `json:"ids"`
+    Duration    int     `json:"duration"`
+    Start       int64   `json:"start"`
+    End         int64   `json:"end"`
+    IsDeleted   bool    `json:"isDeleted"`
+}
+
+func (self *Subscription) GetDb() string {
+    return self.Db
+}
+
+func (self *Subscription) GetUserName() string {
+    return self.User
+}
+
+func (self *Subscription) GetIds() []int {
+    return self.Ids
+}
+
+func (self *Subscription) GetDuration() int {
+    return self.Duration
+}
+
+func (self *Subscription) GetStartTime() int64 {
+    return self.Start
+}
+
+func (self *Subscription) GetEndTime() int64 {
+    return self.End
+}
+
+func (self *Subscription) GetIsDeleted() bool {
+    return self.IsDeleted
+}
+
 type DbUser struct {
 	CommonUser `json:"common"`
 	Db         string     `json:"db"`
